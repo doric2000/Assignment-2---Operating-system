@@ -23,6 +23,7 @@
 #include <sys/socket.h>     // for socket, connect, send, recv
 #include <arpa/inet.h>      // for inet_ntop (print IP address)
 #include <getopt.h>          // getopt
+#include <sys/un.h>          // sockaddr_un
 
 #define MAXDATASIZE 1024    // maximum buffer size for receiving data
 
@@ -37,134 +38,159 @@ void *get_in_addr(struct sockaddr *sa) {
 }
 
 int main(int argc, char *argv[]) {
-    // 1) Variables to hold the parsed arguments
-    char *hostname = NULL;       // we expect a string for hostname/IP
-    char *port_str = NULL;   // string for port number
-    
-    // 2) Define the short options string: "h:p:"
-    //    'h' expects an argument (hostname), 'p' expects an argument (port)
-    const char *short_opts = "h:p:";
+    char *hostname = NULL;
+    char *port_str = NULL;
+    char *uds_path  = NULL;    // new: "-f" specifies UDS datagram socket file
+
+    // 1) Parse command‐line arguments: either UDP or UDS_DGRAM
+    const char *short_opts = "h:p:f:";
     int opt;
-
-    // 3) If the total argc is not exactly 5 (program name + -h + hostname + -p + port),
-    //    we can still try parsing with getopt, but let's at least hint if there aren't enough args.
-    if (argc < 5) {
-        fprintf(stderr, "Usage: %s -h <hostname/IP> -p <port>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    // 4) Call getopt in a loop to parse '-h' and '-p'
-    //    getopt will return the character of the option it finds, or -1 when done.
     while ((opt = getopt(argc, argv, short_opts)) != -1) {
         switch (opt) {
             case 'h':
-                // optarg points to the string after '-h'
+                // e.g. "-h server.example.com"
                 hostname = optarg;
                 break;
             case 'p':
-                // optarg points to the string after '-p'
-                port_str = optarg;   // convert string to integer
+                // e.g. "-p 5555"
+                port_str = optarg;
                 break;
-            case '?':
+            case 'f':
+                // e.g. "-f /tmp/molecule_dgram.sock"
+                uds_path = optarg;
+                break;
             default:
-                // Unknown option or missing required argument
-                fprintf(stderr, "Usage: %s -h <hostname/IP> -p <port>\n", argv[0]);
+                fprintf(stderr,
+                    "Usage:\n"
+                    "  UDP mode:      %s -h <hostname> -p <port>\n"
+                    "  UDS_STREAM mode:%s -f <uds_socket_file_path>\n",
+                    argv[0], argv[0]);
                 exit(EXIT_FAILURE);
         }
     }
-    
-    // 5) After getopt, we should have both hostname and port set correctly.
-    //    If either is missing or port is invalid, print error and exit.
-    if (hostname == NULL || port_str == NULL) {
-        fprintf(stderr, "ERROR: both -h <hostname/IP> and -p <port> must be specified.\n");
-        fprintf(stderr, "Usage: %s -h <hostname/IP> -p <port>\n", argv[0]);
+
+    // 2) Decide which transport to use (exactly one)
+    int use_tcp        = (hostname && port_str) ? 1 : 0;
+    int use_uds_stream = (uds_path) ? 1 : 0;
+    if ((use_tcp + use_uds_stream) != 1) {
+        fprintf(stderr,
+            "ERROR: you must specify exactly one transport mode:\n"
+            "  TCP:         -h <hostname> -p <port>\n"
+            "  UDS_STREAM:  -f <uds_socket_file>\n");
         exit(EXIT_FAILURE);
     }
 
-    // 1. Prepare hints for getaddrinfo
-    struct addrinfo hints, *servinfo, *p;
-    memset(&hints, 0, sizeof hints);                      // zero out hints
-    hints.ai_family   = AF_UNSPEC;                         // allow IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM;                       // TCP stream socket
+    int sockfd = -1;    // this will hold our socket FD
 
-    int rv;
-    if ((rv = getaddrinfo(hostname, port_str, &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+    if (use_tcp) {
+        //------------------------------------------------------------
+        // TCP mode: do a normal getaddrinfo() + socket() + connect()
+        //------------------------------------------------------------
+        struct addrinfo hints, *servinfo, *p;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family   = AF_UNSPEC;         // IPv4 or IPv6
+        hints.ai_socktype = SOCK_STREAM;       // TCP streams
+
+        int rv;
+        if ((rv = getaddrinfo(hostname, port_str, &hints, &servinfo)) != 0) {
+            fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+            return 1;
+        }
+
+        for (p = servinfo; p != NULL; p = p->ai_next) {
+            sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+            if (sockfd < 0) {
+                perror("client: socket");
+                continue;
+            }
+            if (connect(sockfd, p->ai_addr, p->ai_addrlen) < 0) {
+                perror("client: connect");
+                close(sockfd);
+                continue;
+            }
+            break;  // got connected successfully
+        }
+
+        if (p == NULL) {
+            fprintf(stderr, "client: failed to connect to %s:%s\n", hostname, port_str);
+            freeaddrinfo(servinfo);
+            return 2;
+        }
+
+        // print the server IP we connected to
+        char s[INET6_ADDRSTRLEN];
+        inet_ntop(p->ai_family,
+                  get_in_addr((struct sockaddr *)p->ai_addr),
+                  s, sizeof s);
+        printf("client (TCP): connected to %s:%s\n", s, port_str);
+
+        freeaddrinfo(servinfo);
     }
-
-    // 2. Loop through all the results and connect to the first we can
-    int sockfd;
-    for (p = servinfo; p != NULL; p = p->ai_next) {
-        // create a socket
-        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    else {
+        //------------------------------------------------------------
+        // UDS_STREAM mode: create AF_UNIX/SOCK_STREAM socket + connect()
+        //------------------------------------------------------------
+        sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (sockfd < 0) {
-            perror("client: socket");
-            continue;                                      // try next address
+            perror("socket (UDS_STREAM)");
+            exit(EXIT_FAILURE);
         }
 
-        // connect to the server
-        if (connect(sockfd, p->ai_addr, p->ai_addrlen) < 0) {
-            perror("client: connect");
-            close(sockfd);                                // close this socket on failure
-            continue;                                      // try next address
+        struct sockaddr_un uds_addr;
+        memset(&uds_addr, 0, sizeof(uds_addr));
+        uds_addr.sun_family = AF_UNIX;
+        // copy the path into sun_path (null-terminated)
+        strncpy(uds_addr.sun_path, uds_path, sizeof(uds_addr.sun_path) - 1);
+
+        if (connect(sockfd, (struct sockaddr*)&uds_addr, sizeof(uds_addr)) < 0) {
+            perror("connect (UDS_STREAM)");
+            close(sockfd);
+            exit(EXIT_FAILURE);
         }
-        break;                                            // if we get here, we have connected
+
+        printf("client (UDS_STREAM): connected to %s\n", uds_path);
     }
 
-    if (p == NULL) {                                      // if p is NULL, no address succeeded
-        fprintf(stderr, "client: failed to connect to %s:%s\n", hostname, port_str);
-        freeaddrinfo(servinfo);                           // free the linked list
-        return 2;
-    }
-
-    // 3. Print the address to which we connected
-    char s[INET6_ADDRSTRLEN];
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
-              s, sizeof s);
-    printf("client: connected to %s:%s\n", s, port_str);
-
-    freeaddrinfo(servinfo);                               // done with servinfo
-
-    // 4. Print a brief help / available commands
+    // 3) Print a brief help / available commands
     printf("\nAvailable commands (each on its own line):\n");
     printf("  ADD CARBON <number>\n");
     printf("  ADD OXYGEN <number>\n");
     printf("  ADD HYDROGEN <number>\n");
     printf("Type Ctrl+D or Ctrl+C to exit.\n\n");
 
-    // 5. Read lines from stdin and send them to the server as commands
+    // 4) Read lines from stdin and send them to the server
     char line[MAXDATASIZE];
     char buffer[MAXDATASIZE];
-    while (fgets(line, sizeof(line), stdin) != NULL) {    // read a line from stdin
-        if (strcmp(line, "\n") == 0) {                    // skip empty lines
+    while (fgets(line, sizeof(line), stdin) != NULL) {
+        if (strcmp(line, "\n") == 0) {
+            // skip empty line
             continue;
         }
 
-        size_t len = strlen(line);                        // length of the line including newline
-        // send the line (including newline) to the server
+        size_t len = strlen(line);
         if (send(sockfd, line, len, 0) == -1) {
             perror("send");
-            break;                                        // exit loop on send error
+            break;
         }
 
-        // 6. Receive the server's reply
+        // 5) Receive the server's reply
         ssize_t numbytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
         if (numbytes < 0) {
             perror("recv");
-            break;                                        // exit loop on recv error
-        } else if (numbytes == 0) {
+            break;
+        }
+        else if (numbytes == 0) {
             // server closed connection
             printf("Server closed connection\n");
-            break;                                        // exit loop
+            break;
         }
 
-        buffer[numbytes] = '\0';                           // null-terminate the received data
-        printf("%s", buffer);                              // print the server's response
+        buffer[numbytes] = '\0';
+        printf("%s", buffer);
     }
 
-    // 7. Close the socket once done or on EOF
-    close(sockfd);                                          // close connection
+    // 6) Close socket
+    close(sockfd);
     printf("client: connection closed\n");
     return 0;
 }

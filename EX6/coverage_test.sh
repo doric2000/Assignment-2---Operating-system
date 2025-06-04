@@ -11,6 +11,7 @@
 #   0. Remove any old *.gcno / *.gcda / *.gcov
 #   1. Compile each .c with -fprofile-arcs -ftest-coverage
 #   2. Run all tests (during which each *_dbg program emits its own .gcda)
+#      → including “dummy” servers so clients actually connect/send as needed
 #   3. Rename all newly-created *.gcno and *.gcda from "<bin>-<source>.*" → "<source>.*"
 #   4. Run gcov → *.gcov
 #
@@ -32,7 +33,7 @@ DRINKS_BIN="drinks_bar_dbg"
 ATOM_BIN="atom_supplier_dbg"
 MOL_BIN="molecule_requester_dbg"
 
-# Base ports
+# Base ports for drinks_bar tests
 TCP_BASE=50000
 UDP_BASE=60000
 
@@ -44,6 +45,10 @@ ATOM_FILE_GOOD="atoms_good.txt"
 ATOM_FILE_BAD1="atoms_bad1.txt"
 ATOM_FILE_BAD2="atoms_bad2.txt"
 ATOM_FILE_BAD3="atoms_bad3.txt"  # negative‐numbers case
+
+# Ports for dummy “echo” servers (for atom_supplier & molecule_requester)
+ATOM_TCP_ECHO_PORT=50010
+MOL_UDP_ECHO_PORT=60010
 
 echo "---- Step 0: Removing any old *.gcno / *.gcda / *.gcov ----"
 rm -f ./*.gcno ./*.gcda ./*.gcov
@@ -67,7 +72,7 @@ echo
 # 2. Helper functions for drinks_bar_dbg (so STDIN never closes)
 ############################
 
-# Global for server PID
+# Global for drinks_bar_dbg server PID
 SERVER_PID=0
 
 run_drinks() {
@@ -82,7 +87,7 @@ run_drinks() {
 
     ./"$DRINKS_BIN" $args < "$FIFO_STDIN" &
     SERVER_PID=$!
-    sleep 0.2   # let it bind sockets
+    sleep 0.2   # give it a moment to bind sockets
 
     # Keep the write-end open on FD 3 so server’s stdin is not EOF until we want it.
     exec 3> "$FIFO_STDIN"
@@ -120,12 +125,14 @@ stop_drinks() {
 ############################
 
 ########################
-# 3a. atom_supplier_dbg branch coverage
+# 3a. atom_supplier_dbg branch coverage (incl. dummy TCP, IPv6 & UDS servers)
 ########################
 
 echo "========================================"
 echo "3a. atom_supplier_dbg branch coverage"
 echo "========================================"
+
+# First, simple “invalid‐option” tests:
 
 # (3a.1) No arguments → Usage error
 ./"$ATOM_BIN" < /dev/null || true
@@ -158,11 +165,48 @@ echo "========================================"
 # (3a.10) UDS_STREAM‐only invocation (invalid path) → connect fails
 ./"$ATOM_BIN" -f /tmp/nonexistent_stream.sock < /dev/null || true
 
+# Now exercise the “successful” TCP path (IPv4):
+# Launch dummy TCP server in background (listening IPv4):
+nc -l -p "$ATOM_TCP_ECHO_PORT" >/dev/null 2>&1 &
+TCP_ECHO_PID=$!
+sleep 0.1
+
+# (3a.11) Valid TCP connection → should print “client (TCP): connected to …”
+timeout 1s ./"$ATOM_BIN" -h 127.0.0.1 -p "$ATOM_TCP_ECHO_PORT" < /dev/null || true
+
+wait "$TCP_ECHO_PID" 2>/dev/null || true
+
+# Now cover the IPv6 path for getaddrinfo / connect:
+# Launch a dummy IPv6 server:
+nc -l -6 -p "$ATOM_TCP_ECHO_PORT" >/dev/null 2>&1 &
+TCP6_ECHO_PID=$!
+sleep 0.1
+
+# (3a.12) Valid IPv6 TCP → should hit AF_INET6 branch in getaddrinfo/get_in_addr
+timeout 1s ./"$ATOM_BIN" -h ::1 -p "$ATOM_TCP_ECHO_PORT" < /dev/null || true
+
+kill "$TCP6_ECHO_PID" 2>/dev/null || true
+
+# Next, exercise UDS_STREAM “success” path. We need a UDS‐STREAM listener:
+ATOM_UDS_PATH="/tmp/atom_stream.sock"
+[[ -e "$ATOM_UDS_PATH" ]] && rm -f "$ATOM_UDS_PATH"
+
+# Launch dummy UDS_STREAM server (nc -lU) in background:
+nc -lU "$ATOM_UDS_PATH" >/dev/null 2>&1 &
+UDSSTREAM_ECHO_PID=$!
+sleep 0.1
+
+# (3a.13) Valid UDS_STREAM connection:
+timeout 1s ./"$ATOM_BIN" -f "$ATOM_UDS_PATH" < /dev/null || true
+
+kill "$UDSSTREAM_ECHO_PID" 2>/dev/null || true
+rm -f "$ATOM_UDS_PATH"
+
 echo "---- atom_supplier_dbg run complete ----"
 echo
 
 ########################
-# 3b. molecule_requester_dbg branch coverage
+# 3b. molecule_requester_dbg branch coverage (incl. dummy UDP, IPv6 & UDS servers)
 ########################
 
 echo "========================================"
@@ -199,6 +243,51 @@ timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p 99999 < /dev/null || true
 
 # (3b.10) UDS_DGRAM‐only invocation (invalid path) → bind/bind‐error
 ./"$MOL_BIN" -f /tmp/nonexistent_dgram.sock < /dev/null || true
+
+# Now exercise the “successful” UDP path (IPv4):
+# Launch a dummy UDP “echo” server using netcat in the background:
+#   It listens on port MOL_UDP_ECHO_PORT with IPv4, and echoes back.
+nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
+UDP_ECHO_PID=$!
+sleep 0.1
+
+# (3b.11) Valid UDP send/receive (just sends “DELIVER GLUCOSE 0” so client goes through send/recv path)
+printf "DELIVER GLUCOSE 0\n" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
+
+kill "$UDP_ECHO_PID" 2>/dev/null || true
+
+# Cover the IPv6 UDP branch:
+nc -u -l -6 -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
+UDP6_ECHO_PID=$!
+sleep 0.1
+
+# (3b.12) Valid IPv6 UDP send/receive → hits AF_INET6 branch
+printf "DELIVER WATER 0\n" | timeout 1s ./"$MOL_BIN" -h ::1 -p "$MOL_UDP_ECHO_PORT" || true
+
+kill "$UDP6_ECHO_PID" 2>/dev/null || true
+
+# Next: exercise UDS_DGRAM “success” path. We need a UDS‐DGRAM listener that echoes back.
+MOL_UDS_DGRAM_PATH="/tmp/mol_dgram.sock"
+[[ -e "$MOL_UDS_DGRAM_PATH" ]] && rm -f "$MOL_UDS_DGRAM_PATH"
+
+python3 - << 'EOF' &
+import socket, os
+path = "/tmp/mol_dgram.sock"
+if os.path.exists(path): os.unlink(path)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.bind(path)
+while True:
+    data, addr = s.recvfrom(1024)
+    s.sendto(data, addr)
+EOF
+UDS_DGRAM_ECHO_PID=$!
+sleep 0.2
+
+# (3b.13) Valid UDS_DGRAM send/receive:
+printf "DELIVER WATER 0\n" | timeout 1s ./"$MOL_BIN" -f "$MOL_UDS_DGRAM_PATH" || true
+
+kill "$UDS_DGRAM_ECHO_PID" 2>/dev/null || true
+rm -f "$MOL_UDS_DGRAM_PATH"
 
 echo "---- molecule_requester_dbg run complete ----"
 echo
@@ -461,17 +550,42 @@ run_drinks "-c 0 -o 0 -h 0 -T $PORT5_TCP -U $PORT5_UDP -s $UDS_STREAM -d $UDS_DG
 sleep 0.2
 
 if command -v nc >/dev/null 2>&1; then
-    # (3j.1) UDS_STREAM: valid and invalid ADD
+    # (3j.1) UDS_STREAM: valid ADD → need a UDS_STREAM server:
+    [[ -e "$UDS_STREAM" ]] && rm -f "$UDS_STREAM"
+    nc -lU "$UDS_STREAM" >/dev/null 2>&1 &
+    UDS_STREAM_ECHO_PID=$!
+    sleep 0.1
+
     # Valid ADD
     printf "ADD CARBON 3\n" | timeout 1s nc -U "$UDS_STREAM" || true
     # Invalid atom type
     printf "ADD NEON 1\n"   | timeout 1s nc -U "$UDS_STREAM" || true
 
-    # (3j.2) UDS_DGRAM: valid and invalid DELIVER
+    kill "$UDS_STREAM_ECHO_PID" 2>/dev/null || true
+
+    # (3j.2) UDS_DGRAM: valid and invalid DELIVER → need a UDS_DGRAM server:
+    [[ -e "$UDS_DGRAM" ]] && rm -f "$UDS_DGRAM"
+    # Small Python echo server for UDS_DGRAM:
+    python3 - << 'EOF' &
+import socket, os
+pth = "$UDS_DGRAM"
+if os.path.exists(pth): os.unlink(pth)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.bind(pth)
+while True:
+    data, addr = s.recvfrom(1024)
+    s.sendto(data, addr)
+EOF
+    UDS_DGRAM_ECHO_PID=$!
+    sleep 0.2
+
     # Not enough atoms → error
     printf "DELIVER WATER 1\n"   | timeout 1s nc -u -U "$UDS_DGRAM" || true
     # Invalid molecule → error
     printf "DELIVER INVALID 1\n" | timeout 1s nc -u -U "$UDS_DGRAM" || true
+
+    kill "$UDS_DGRAM_ECHO_PID" 2>/dev/null || true
+    rm -f "$UDS_DGRAM"
 else
     echo "→ Skipping UDS_STREAM / UDS_DGRAM tests: 'nc -U' not found."
 fi
@@ -534,5 +648,5 @@ echo
 
 # Kill any leftover processes, remove FIFOs/UDS sockets
 kill 0 2>/dev/null || true
-rm -f "$FIFO_STDIN" "$UDS_STREAM" "$UDS_DGRAM"
+rm -f "$FIFO_STDIN" "$UDS_STREAM" "$UDS_DGRAM" /tmp/mol_dgram.sock /tmp/atom_stream.sock
 echo "---- CLEANUP complete ----"

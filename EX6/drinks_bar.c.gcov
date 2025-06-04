@@ -171,60 +171,60 @@
         -:  167:// Fills `response` with either “OK: Carbon=.. Oxygen=.. Hydrogen=..\n”
         -:  168:// or an ERROR line.
         -:  169:// ----------------------------------------------------------------------------
-       12:  170:void parse_and_update_tcp(const char *line, char *response, size_t resp_size) {
+       10:  170:void parse_and_update_tcp(const char *line, char *response, size_t resp_size) {
         -:  171:
-       12:  172:    if (save_file_path) {
-       12:  173:        load_atoms_from_file(save_file_path, 0, 0, 0);
+       10:  172:    if (save_file_path) {
+       10:  173:        load_atoms_from_file(save_file_path, 0, 0, 0);
         -:  174:    }
         -:  175:    
         -:  176:    
         -:  177:    char temp[MAXBUF];
-       12:  178:    strncpy(temp, line, sizeof(temp));
-       12:  179:    temp[sizeof(temp)-1] = '\0';
+       10:  178:    strncpy(temp, line, sizeof(temp));
+       10:  179:    temp[sizeof(temp)-1] = '\0';
         -:  180:
-       12:  181:    char *saveptr = NULL;
-       12:  182:    char *token_cmd  = strtok_r(temp, " \t\r\n", &saveptr);  // “ADD”
-       12:  183:    char *token_type = strtok_r(NULL,   " \t\r\n", &saveptr);  // “CARBON”|“OXYGEN”|“HYDROGEN”
-       12:  184:    char *token_num  = strtok_r(NULL,   " \t\r\n", &saveptr);  // e.g. “100”
+       10:  181:    char *saveptr = NULL;
+       10:  182:    char *token_cmd  = strtok_r(temp, " \t\r\n", &saveptr);  // “ADD”
+       10:  183:    char *token_type = strtok_r(NULL,   " \t\r\n", &saveptr);  // “CARBON”|“OXYGEN”|“HYDROGEN”
+       10:  184:    char *token_num  = strtok_r(NULL,   " \t\r\n", &saveptr);  // e.g. “100”
         -:  185:
-       12:  186:    if (!token_cmd || !token_type || !token_num) {
+       10:  186:    if (!token_cmd || !token_type || !token_num) {
         1:  187:        snprintf(response, resp_size, "ERROR: invalid command\n");
-        6:  188:        return;
+        5:  188:        return;
         -:  189:    }
-       11:  190:    if (strcmp(token_cmd, "ADD") != 0) {
+        9:  190:    if (strcmp(token_cmd, "ADD") != 0) {
         1:  191:        snprintf(response, resp_size, "ERROR: invalid command\n");
         1:  192:        return;
         -:  193:    }
         -:  194:
-       10:  195:    enum { CARBON, OXYGEN, HYDROGEN, TYPE_UNKNOWN } type = TYPE_UNKNOWN;
-       10:  196:    if (strcmp(token_type, "CARBON") == 0)      type = CARBON;
-        5:  197:    else if (strcmp(token_type, "OXYGEN") == 0) type = OXYGEN;
-        3:  198:    else if (strcmp(token_type, "HYDROGEN") == 0) type = HYDROGEN;
+        8:  195:    enum { CARBON, OXYGEN, HYDROGEN, TYPE_UNKNOWN } type = TYPE_UNKNOWN;
+        8:  196:    if (strcmp(token_type, "CARBON") == 0)      type = CARBON;
+        4:  197:    else if (strcmp(token_type, "OXYGEN") == 0) type = OXYGEN;
+        2:  198:    else if (strcmp(token_type, "HYDROGEN") == 0) type = HYDROGEN;
         -:  199:    else {
-        2:  200:        snprintf(response, resp_size, "ERROR: invalid atom type\n");
-        2:  201:        return;
+        1:  200:        snprintf(response, resp_size, "ERROR: invalid atom type\n");
+        1:  201:        return;
         -:  202:    }
         -:  203:
-        8:  204:    char *endptr = NULL;
-        8:  205:    unsigned long long val = strtoull(token_num, &endptr, 10);
-        8:  206:    if (endptr == token_num || *endptr != '\0') {
+        7:  204:    char *endptr = NULL;
+        7:  205:    unsigned long long val = strtoull(token_num, &endptr, 10);
+        7:  206:    if (endptr == token_num || *endptr != '\0') {
         1:  207:        snprintf(response, resp_size, "ERROR: invalid number\n");
         1:  208:        return;
         -:  209:    }
-        7:  210:    if (val > MAX_ATOMS) {
+        6:  210:    if (val > MAX_ATOMS) {
         1:  211:        snprintf(response, resp_size, "ERROR: number too large\n");
         1:  212:        return;
         -:  213:    }
         -:  214:
         -:  215:    // Attempt to add to the correct stock, checking for overflow.
-        6:  216:    switch (type) {
-        4:  217:        case CARBON:
-        4:  218:            if (atom_stock.carbon + val > MAX_ATOMS) {
+        5:  216:    switch (type) {
+        3:  217:        case CARBON:
+        3:  218:            if (atom_stock.carbon + val > MAX_ATOMS) {
     #####:  219:                snprintf(response, resp_size, "ERROR: capacity exceeded\n");
     #####:  220:                return;
         -:  221:            }
-        4:  222:            atom_stock.carbon += val;
-        4:  223:            break;
+        3:  222:            atom_stock.carbon += val;
+        3:  223:            break;
         1:  224:        case OXYGEN:
         1:  225:            if (atom_stock.oxygen + val > MAX_ATOMS) {
     #####:  226:                snprintf(response, resp_size, "ERROR: capacity exceeded\n");
@@ -245,22 +245,22 @@
         -:  241:    }
         -:  242:
         -:  243:    // Print updated atom inventory to server console
-        6:  244:    printf("SERVER INVENTORY (atoms): Carbon=%llu  Oxygen=%llu  Hydrogen=%llu\n",
-        6:  245:           (unsigned long long)atom_stock.carbon,
-        6:  246:           (unsigned long long)atom_stock.oxygen,
-        6:  247:           (unsigned long long)atom_stock.hydrogen);
+        5:  244:    printf("SERVER INVENTORY (atoms): Carbon=%llu  Oxygen=%llu  Hydrogen=%llu\n",
+        5:  245:           (unsigned long long)atom_stock.carbon,
+        5:  246:           (unsigned long long)atom_stock.oxygen,
+        5:  247:           (unsigned long long)atom_stock.hydrogen);
         -:  248:
         -:  249:    //if there is a save flag , we will save the atoms to the file.
-        6:  250:    if (save_file_path) {
-        6:  251:        save_atoms_to_file(save_file_path);
+        5:  250:    if (save_file_path) {
+        5:  251:        save_atoms_to_file(save_file_path);
         -:  252:    }
         -:  253:
         -:  254:    // Build success response
-        6:  255:    snprintf(response, resp_size,
+        5:  255:    snprintf(response, resp_size,
         -:  256:             "OK: Carbon=%llu Oxygen=%llu Hydrogen=%llu\n",
-        6:  257:             (unsigned long long)atom_stock.carbon,
-        6:  258:             (unsigned long long)atom_stock.oxygen,
-        6:  259:             (unsigned long long)atom_stock.hydrogen);
+        5:  257:             (unsigned long long)atom_stock.carbon,
+        5:  258:             (unsigned long long)atom_stock.oxygen,
+        5:  259:             (unsigned long long)atom_stock.hydrogen);
         -:  260:}
         -:  261:
         -:  262:// ----------------------------------------------------------------------------
@@ -268,32 +268,32 @@
         -:  264:// Molecule → needs certain numbers of atoms; subtract if enough atoms; else error.
         -:  265:// Print the resulting inventory, then respond with a short “OK: Atoms left …\n”
         -:  266:// ----------------------------------------------------------------------------
-       15:  267:void parse_and_update_udp(const char *line, char *response, size_t resp_size) {  
+       13:  267:void parse_and_update_udp(const char *line, char *response, size_t resp_size) {  
         -:  268:    
-       15:  269:    if (save_file_path) {
-       15:  270:        load_atoms_from_file(save_file_path, 0, 0, 0);
+       13:  269:    if (save_file_path) {
+       13:  270:        load_atoms_from_file(save_file_path, 0, 0, 0);
         -:  271:    }
         -:  272:    
         -:  273:    char temp[MAXBUF];
-       15:  274:    strncpy(temp, line, sizeof(temp));
-       15:  275:    temp[sizeof(temp)-1] = '\0';
+       13:  274:    strncpy(temp, line, sizeof(temp));
+       13:  275:    temp[sizeof(temp)-1] = '\0';
         -:  276:
-       15:  277:    char *saveptr = NULL;
-       15:  278:    char *token_cmd = strtok_r(temp, " \t\r\n", &saveptr);  // “DELIVER”
-       15:  279:    char *token_mol = strtok_r(NULL,   " \t\r\n", &saveptr);  // e.g. “WATER” or “CARBON”
+       13:  277:    char *saveptr = NULL;
+       13:  278:    char *token_cmd = strtok_r(temp, " \t\r\n", &saveptr);  // “DELIVER”
+       13:  279:    char *token_mol = strtok_r(NULL,   " \t\r\n", &saveptr);  // e.g. “WATER” or “CARBON”
         -:  280:
-       15:  281:    if (!token_cmd || !token_mol) {
+       13:  281:    if (!token_cmd || !token_mol) {
         1:  282:        snprintf(response, resp_size, "ERROR: invalid command\n");
-       14:  283:        return;
+       12:  283:        return;
         -:  284:    }
-       14:  285:    if (strcmp(token_cmd, "DELIVER") != 0) {
+       12:  285:    if (strcmp(token_cmd, "DELIVER") != 0) {
         1:  286:        snprintf(response, resp_size, "ERROR: invalid command\n");
         1:  287:        return;
         -:  288:    }
         -:  289:
         -:  290:    // Build full molecule name if needed (“CARBON DIOXIDE” → two tokens)
         -:  291:    char full_mol[MAXBUF];
-       13:  292:    if (strcmp(token_mol, "CARBON") == 0) {
+       11:  292:    if (strcmp(token_mol, "CARBON") == 0) {
         2:  293:        char *token_next = strtok_r(NULL, " \t\r\n", &saveptr);
         2:  294:        if (!token_next || strcmp(token_next, "DIOXIDE") != 0) {
     #####:  295:            snprintf(response, resp_size, "ERROR: invalid molecule type\n");
@@ -301,51 +301,51 @@
         -:  297:        }
         2:  298:        strcpy(full_mol, "CARBON DIOXIDE");
         -:  299:    }
-       11:  300:    else if (strcmp(token_mol, "WATER") == 0) {
-        6:  301:        strcpy(full_mol, "WATER");
+        9:  300:    else if (strcmp(token_mol, "WATER") == 0) {
+        5:  301:        strcpy(full_mol, "WATER");
         -:  302:    }
-        5:  303:    else if (strcmp(token_mol, "GLUCOSE") == 0) {
+        4:  303:    else if (strcmp(token_mol, "GLUCOSE") == 0) {
         2:  304:        strcpy(full_mol, "GLUCOSE");
         -:  305:    }
-        3:  306:    else if (strcmp(token_mol, "ALCOHOL") == 0) {
+        2:  306:    else if (strcmp(token_mol, "ALCOHOL") == 0) {
         1:  307:        strcpy(full_mol, "ALCOHOL");
         -:  308:    }
         -:  309:    else {
-        2:  310:        snprintf(response, resp_size, "ERROR: invalid molecule type\n");
-        2:  311:        return;
+        1:  310:        snprintf(response, resp_size, "ERROR: invalid molecule type\n");
+        1:  311:        return;
         -:  312:    }
         -:  313:
         -:  314:    // Next token must be a number
-       11:  315:    char *token_num = strtok_r(NULL, " \t\r\n", &saveptr);
-       11:  316:    if (!token_num) {
+       10:  315:    char *token_num = strtok_r(NULL, " \t\r\n", &saveptr);
+       10:  316:    if (!token_num) {
         1:  317:        snprintf(response, resp_size, "ERROR: missing number\n");
         1:  318:        return;
         -:  319:    }
         -:  320:    // Ensure no extra tokens
-       10:  321:    char *token_extra = strtok_r(NULL, " \t\r\n", &saveptr);
-       10:  322:    if (token_extra) {
+        9:  321:    char *token_extra = strtok_r(NULL, " \t\r\n", &saveptr);
+        9:  322:    if (token_extra) {
         1:  323:        snprintf(response, resp_size, "ERROR: too many arguments\n");
         1:  324:        return;
         -:  325:    }
         -:  326:
-        9:  327:    char *endptr = NULL;
-        9:  328:    unsigned long long count = strtoull(token_num, &endptr, 10);
-        9:  329:    if (endptr == token_num || *endptr != '\0') {
+        8:  327:    char *endptr = NULL;
+        8:  328:    unsigned long long count = strtoull(token_num, &endptr, 10);
+        8:  329:    if (endptr == token_num || *endptr != '\0') {
         1:  330:        snprintf(response, resp_size, "ERROR: invalid number\n");
         1:  331:        return;
         -:  332:    }
-        8:  333:    if (count > MAX_ATOMS) {
+        7:  333:    if (count > MAX_ATOMS) {
     #####:  334:        snprintf(response, resp_size, "ERROR: number too large\n");
     #####:  335:        return;
         -:  336:    }
         -:  337:
         -:  338:    // Compute needed atoms for one molecule × count
-        8:  339:    uint64_t req_carbon = 0, req_oxygen = 0, req_hydrogen = 0;
-        8:  340:    if (strcmp(full_mol, "WATER") == 0) {
+        7:  339:    uint64_t req_carbon = 0, req_oxygen = 0, req_hydrogen = 0;
+        7:  340:    if (strcmp(full_mol, "WATER") == 0) {
         -:  341:        // H2O: needs 2 H + 1 O per molecule
-        3:  342:        req_hydrogen = 2ULL * count;
-        3:  343:        req_oxygen   = 1ULL * count;
-        3:  344:        req_carbon   = 0ULL;
+        2:  342:        req_hydrogen = 2ULL * count;
+        2:  343:        req_oxygen   = 1ULL * count;
+        2:  344:        req_carbon   = 0ULL;
         -:  345:    }
         5:  346:    else if (strcmp(full_mol, "CARBON DIOXIDE") == 0) {
         -:  347:        // CO2: needs 1 C + 2 O per molecule
@@ -371,13 +371,13 @@
         -:  367:    }
         -:  368:
         -:  369:    // Check if enough atoms exist
-        8:  370:    if (atom_stock.carbon   < req_carbon) {
+        7:  370:    if (atom_stock.carbon   < req_carbon) {
         2:  371:        snprintf(response, resp_size, "ERROR: not enough carbon atoms\n");
         2:  372:        return;
         -:  373:    }
-        6:  374:    if (atom_stock.oxygen   < req_oxygen) {
-        3:  375:        snprintf(response, resp_size, "ERROR: not enough oxygen atoms\n");
-        3:  376:        return;
+        5:  374:    if (atom_stock.oxygen   < req_oxygen) {
+        2:  375:        snprintf(response, resp_size, "ERROR: not enough oxygen atoms\n");
+        2:  376:        return;
         -:  377:    }
         3:  378:    if (atom_stock.hydrogen < req_hydrogen) {
         2:  379:        snprintf(response, resp_size, "ERROR: not enough hydrogen atoms\n");
@@ -412,50 +412,50 @@
         -:  408://   - send the response back over that same TCP socket.
         -:  409:// Return false if client closed or a recv‐error occurred.
         -:  410:// ----------------------------------------------------------------------------
-       22:  411:bool handle_tcp_client(int client_fd) {
+       20:  411:bool handle_tcp_client(int client_fd) {
         -:  412:    char buf[MAXBUF];
-       22:  413:    ssize_t numbytes = recv(client_fd, buf, sizeof(buf)-1, 0);
-       22:  414:    if (numbytes <= 0) {
+       20:  413:    ssize_t numbytes = recv(client_fd, buf, sizeof(buf)-1, 0);
+       20:  414:    if (numbytes <= 0) {
         -:  415:        // 0 => client closed; <0 => recv error
        10:  416:        return false;
         -:  417:    }
-       12:  418:    buf[numbytes] = '\0';
+       10:  418:    buf[numbytes] = '\0';
         -:  419:
         -:  420:    char response[MAXBUF];
-       12:  421:    parse_and_update_tcp(buf, response, sizeof(response));
+       10:  421:    parse_and_update_tcp(buf, response, sizeof(response));
         -:  422:
-       12:  423:    if (send(client_fd, response, strlen(response), 0) < 0) {
+       10:  423:    if (send(client_fd, response, strlen(response), 0) < 0) {
     #####:  424:        perror("send (TCP)");
         -:  425:    }
-       12:  426:    return true;
+       10:  426:    return true;
         -:  427:}
         -:  428:// ----------------------------------------------------------------------------
         -:  429:// load_atoms_from_file():
         -:  430://      if the file exists and big enough , reads sizeof (atomStock) to the global var.
         -:  431://      else creating a new file , fills it with the values of the atoms and read the full struct to the file.
         -:  432:// ----------------------------------------------------------------------------
-       48:  433:static void load_atoms_from_file(const char *path, uint64_t init_c, uint64_t init_o,uint64_t init_h)
+       40:  433:static void load_atoms_from_file(const char *path, uint64_t init_c, uint64_t init_o,uint64_t init_h)
         -:  434:{
         -:  435:    struct stat st;
         -:  436:    FILE *fp;
         -:  437:
         -:  438:    //if the file exists
-       48:  439:    if (stat(path,&st) == 0){
-       47:  440:        if(st.st_size >= (off_t)sizeof(atom_stock)){
+       40:  439:    if (stat(path,&st) == 0){
+       39:  440:        if(st.st_size >= (off_t)sizeof(atom_stock)){
         -:  441:            //reading all the struct from the file:
-       39:  442:            fp = fopen(path,"rb");
-       39:  443:            if (!fp){
+       31:  442:            fp = fopen(path,"rb");
+       31:  443:            if (!fp){
     #####:  444:                perror("fopen (for read)");
     #####:  445:                exit(EXIT_FAILURE);
         -:  446:            }
-       39:  447:            size_t n = fread(&atom_stock,1,sizeof(AtomStock),fp);
-       39:  448:            if (n != sizeof(AtomStock)){
+       31:  447:            size_t n = fread(&atom_stock,1,sizeof(AtomStock),fp);
+       31:  448:            if (n != sizeof(AtomStock)){
     #####:  449:                fprintf(stderr,"Error:could not read Atoms from file \n");
     #####:  450:                fclose(fp);
     #####:  451:                exit(EXIT_FAILURE);
         -:  452:            }
-       39:  453:            fclose(fp);
-       39:  454:            return;
+       31:  453:            fclose(fp);
+       31:  454:            return;
         -:  455:        }
         -:  456:        //if file is too small , we will drop to create a new file.
         -:  457:    }
@@ -486,9 +486,9 @@
         -:  482://writes a block of our atoms struct with fwrite.
         -:  483://releases the lock and closes the files.
         -:  484:// ----------------------------------------------------------------------------
-        9:  485:static void save_atoms_to_file(const char *path){
-        9:  486:    FILE *fp = fopen(path,"r+b");
-        9:  487:    if (!fp) { //if file does not exits we will try to create it
+        6:  485:static void save_atoms_to_file(const char *path){
+        6:  486:    FILE *fp = fopen(path,"r+b");
+        6:  487:    if (!fp) { //if file does not exits we will try to create it
     #####:  488:        fp = fopen(path,"w+b");
     #####:  489:        if(!fp){
     #####:  490:            perror("fopen for save");
@@ -496,32 +496,32 @@
         -:  492:        }
         -:  493:    }
         -:  494:
-        9:  495:    int fd = fileno(fp); // should understand later
-        9:  496:    if (fd < 0) {
+        6:  495:    int fd = fileno(fp); // should understand later
+        6:  496:    if (fd < 0) {
     #####:  497:        perror("fileno");
     #####:  498:        fclose(fp);
     #####:  499:        return;
         -:  500:    }
         -:  501:
         -:  502:    //exlusive lock:
-        9:  503:    if (flock(fd,LOCK_EX) < 0){
+        6:  503:    if (flock(fd,LOCK_EX) < 0){
     #####:  504:        perror("flock LOCK_EX");
         -:  505:        //might be risky but we will keep going :D
         -:  506:    }
         -:  507:
         -:  508:    //writing:
-        9:  509:    if (fseek(fp,0,SEEK_SET)!= 0)
+        6:  509:    if (fseek(fp,0,SEEK_SET)!= 0)
     #####:  510:        perror("fseek");
-        9:  511:    size_t w = fwrite(&atom_stock,1,sizeof(AtomStock),fp);
-        9:  512:    if (w!=sizeof(AtomStock))
+        6:  511:    size_t w = fwrite(&atom_stock,1,sizeof(AtomStock),fp);
+        6:  512:    if (w!=sizeof(AtomStock))
     #####:  513:        fprintf(stderr, "Error: could not write full Atom struct\n");
-        9:  514:    fflush(fp);
+        6:  514:    fflush(fp);
         -:  515:
         -:  516:    //releasing the lock:
-        9:  517:    if (flock(fd, LOCK_UN) < 0) {
+        6:  517:    if (flock(fd, LOCK_UN) < 0) {
     #####:  518:        perror("flock LOCK_UN");
         -:  519:    }
-        9:  520:    fclose(fp);
+        6:  520:    fclose(fp);
         -:  521:
         -:  522:}   
         -:  523:
@@ -847,28 +847,28 @@
         -:  843:    // ----------------------------------------------------------------------------
         -:  844:    // 10) Enter the main select() loop
         -:  845:    // ----------------------------------------------------------------------------
-       54:  846:    while (1) {
-       75:  847:        if (timed_out) {
+       50:  846:    while (1) {
+       71:  847:        if (timed_out) {
         -:  848:            // Timeout triggered ⇒ no activity within the last <timeout_secs> seconds
         1:  849:            printf("TIMEOUT: no activity for %d seconds. Shutting down.\n", timeout_secs);
         1:  850:            break;
         -:  851:        }
         -:  852:
         -:  853:        fd_set read_fds;
-     1258:  854:        FD_ZERO(&read_fds);
-       74:  855:        int max_fd = -1;
+     1190:  854:        FD_ZERO(&read_fds);
+       70:  855:        int max_fd = -1;
         -:  856:
         -:  857:        // a) Always watch tcp_listen_fd
-       74:  858:        FD_SET(tcp_listen_fd, &read_fds);
-       74:  859:        if (tcp_listen_fd > max_fd) max_fd = tcp_listen_fd;
+       70:  858:        FD_SET(tcp_listen_fd, &read_fds);
+       70:  859:        if (tcp_listen_fd > max_fd) max_fd = tcp_listen_fd;
         -:  860:
         -:  861:        // b) Always watch udp_fd
-       74:  862:        FD_SET(udp_fd, &read_fds);
-       74:  863:        if (udp_fd > max_fd) max_fd = udp_fd;
+       70:  862:        FD_SET(udp_fd, &read_fds);
+       70:  863:        if (udp_fd > max_fd) max_fd = udp_fd;
         -:  864:
         -:  865:        // c) Watch all active TCP client fds
-    75850:  866:        for (int i = 0; i < MAX_CLIENTS; i++) {
-    75776:  867:            if (client_fds[i] != -1) {
+    71750:  866:        for (int i = 0; i < MAX_CLIENTS; i++) {
+    71680:  867:            if (client_fds[i] != -1) {
        20:  868:                FD_SET(client_fds[i], &read_fds);
        20:  869:                if (client_fds[i] > max_fd) {
        20:  870:                    max_fd = client_fds[i];
@@ -877,24 +877,24 @@
         -:  873:        }
         -:  874:
         -:  875:        // d) Watch keyboard (STDIN_FILENO)
-       74:  876:        FD_SET(STDIN_FILENO, &read_fds);
-      74*:  877:        if (STDIN_FILENO > max_fd) max_fd = STDIN_FILENO;
+       70:  876:        FD_SET(STDIN_FILENO, &read_fds);
+      70*:  877:        if (STDIN_FILENO > max_fd) max_fd = STDIN_FILENO;
         -:  878:
         -:  879:        // e) If UDS_STREAM was created, watch uds_stream_fd
-       74:  880:        if (uds_stream_path) {
-        6:  881:            FD_SET(uds_stream_fd, &read_fds);
-        6:  882:            if (uds_stream_fd > max_fd) max_fd = uds_stream_fd;
+       70:  880:        if (uds_stream_path) {
+        2:  881:            FD_SET(uds_stream_fd, &read_fds);
+        2:  882:            if (uds_stream_fd > max_fd) max_fd = uds_stream_fd;
         -:  883:        }
         -:  884:
         -:  885:        // f) If UDS_DGRAM was created, watch uds_dgram_fd
-       74:  886:        if (uds_dgram_path) {
-        6:  887:            FD_SET(uds_dgram_fd, &read_fds);
-        6:  888:            if (uds_dgram_fd > max_fd) max_fd = uds_dgram_fd;
+       70:  886:        if (uds_dgram_path) {
+        2:  887:            FD_SET(uds_dgram_fd, &read_fds);
+        2:  888:            if (uds_dgram_fd > max_fd) max_fd = uds_dgram_fd;
         -:  889:        }
         -:  890:
         -:  891:        // Wait until at least one descriptor is ready
-       74:  892:        int ready = select(max_fd + 1, &read_fds, NULL, NULL, NULL);
-       74:  893:        if (ready < 0) {
+       70:  892:        int ready = select(max_fd + 1, &read_fds, NULL, NULL, NULL);
+       70:  893:        if (ready < 0) {
         1:  894:            if (errno == EINTR) {
         -:  895:                // Interrupted by a signal (likely SIGALRM). Recompute if timed_out.
         1:  896:                continue;
@@ -907,7 +907,7 @@
         -:  903:        // 10.1 New incoming TCP connection?
         -:  904:        // If tcp_listen_fd is ready, accept() it and store in client_fds[].
         -:  905:        // -------------------------------------------------------
-       73:  906:        if (FD_ISSET(tcp_listen_fd, &read_fds)) {
+       69:  906:        if (FD_ISSET(tcp_listen_fd, &read_fds)) {
         -:  907:            struct sockaddr_storage client_addr;
        10:  908:            socklen_t addr_len = sizeof(client_addr);
        10:  909:            int new_fd = accept(tcp_listen_fd,
@@ -947,7 +947,7 @@
         -:  943:        // 10.2 Incoming UDP datagram?
         -:  944:        // If udp_fd is ready, recvfrom() it, parse_and_update_udp(), sendto() the reply.
         -:  945:        // -------------------------------------------------------
-       73:  946:        if (FD_ISSET(udp_fd, &read_fds)) {
+       69:  946:        if (FD_ISSET(udp_fd, &read_fds)) {
         -:  947:            char buf[MAXBUF];
         -:  948:            struct sockaddr_storage client_addr;
        13:  949:            socklen_t addr_len = sizeof(client_addr);
@@ -986,9 +986,9 @@
         -:  982:        // 10.3 Check each active TCP client descriptor: 
         -:  983:        // if ready, call handle_tcp_client(); if it returns false, close & remove.
         -:  984:        // -------------------------------------------------------
-    74825:  985:        for (int i = 0; i < MAX_CLIENTS; i++) {
-    74752:  986:            int fd = client_fds[i];
-    74752:  987:            if (fd != -1 && FD_ISSET(fd, &read_fds)) {
+    70725:  985:        for (int i = 0; i < MAX_CLIENTS; i++) {
+    70656:  986:            int fd = client_fds[i];
+    70656:  987:            if (fd != -1 && FD_ISSET(fd, &read_fds)) {
        20:  988:                if (!handle_tcp_client(fd)) {
        10:  989:                    close(fd);
        10:  990:                    client_fds[i] = -1;
@@ -1005,7 +1005,7 @@
         -: 1001:        // 10.4 Console keyboard input (STDIN_FILENO)?
         -: 1002:        // If ready, read one line, interpret “GEN …” commands.
         -: 1003:        // -------------------------------------------------------
-       73: 1004:        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+       69: 1004:        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
        26: 1005:            if (save_file_path) {
         8: 1006:                load_atoms_from_file(save_file_path, 0, 0, 0);
         -: 1007:            }
@@ -1082,21 +1082,21 @@
         -: 1078:        // 10.5 Accept a new UDS_STREAM connection (if that socket exists)
         -: 1079:        // Once accepted, handle exactly one “ADD …” on that connection and close.
         -: 1080:        // -------------------------------------------------------
-       53: 1081:        if (uds_stream_path && uds_stream_fd >= 0 && FD_ISSET(uds_stream_fd, &read_fds)) {
-        2: 1082:            int new_un_fd = accept(uds_stream_fd, NULL, NULL);
-        2: 1083:            if (new_un_fd < 0) {
+      49*: 1081:        if (uds_stream_path && uds_stream_fd >= 0 && FD_ISSET(uds_stream_fd, &read_fds)) {
+    #####: 1082:            int new_un_fd = accept(uds_stream_fd, NULL, NULL);
+    #####: 1083:            if (new_un_fd < 0) {
     #####: 1084:                perror("accept (UDS_STREAM)");
         -: 1085:            } else {
-        2: 1086:                if (save_file_path) {
-        2: 1087:                    load_atoms_from_file(save_file_path, 0,0,0);
+    #####: 1086:                if (save_file_path) {
+    #####: 1087:                    load_atoms_from_file(save_file_path, 0,0,0);
         -: 1088:                }
         -: 1089:                // Use the same TCP‐handler for “ADD …” lines
-        2: 1090:                if (!handle_tcp_client(new_un_fd)) {
+    #####: 1090:                if (!handle_tcp_client(new_un_fd)) {
         -: 1091:                    // either closed immediately or error
         -: 1092:                }
-        2: 1093:                close(new_un_fd);
+    #####: 1093:                close(new_un_fd);
         -: 1094:            }
-        2: 1095:            if (timeout_secs > 0) {
+    #####: 1095:            if (timeout_secs > 0) {
     #####: 1096:                alarm(timeout_secs);
     #####: 1097:                timed_out = 0;
         -: 1098:            }
@@ -1106,30 +1106,30 @@
         -: 1102:        // 10.6 Receive one UDS_DGRAM datagram “DELIVER …” (if that socket exists)
         -: 1103:        // Parse & respond to that client’s address over UDS datagram.
         -: 1104:        // -------------------------------------------------------
-       53: 1105:        if (uds_dgram_path && uds_dgram_fd >= 0 && FD_ISSET(uds_dgram_fd, &read_fds)) {
+      49*: 1105:        if (uds_dgram_path && uds_dgram_fd >= 0 && FD_ISSET(uds_dgram_fd, &read_fds)) {
         -: 1106:            char buf[MAXBUF];
         -: 1107:            struct sockaddr_un cli_un;
-        2: 1108:            socklen_t cli_len = sizeof(cli_un);
-        2: 1109:            ssize_t nbytes = recvfrom(
+    #####: 1108:            socklen_t cli_len = sizeof(cli_un);
+    #####: 1109:            ssize_t nbytes = recvfrom(
         -: 1110:                uds_dgram_fd,
         -: 1111:                buf, sizeof(buf)-1,
         -: 1112:                0,
         -: 1113:                (struct sockaddr*)&cli_un,
         -: 1114:                &cli_len
         -: 1115:            );
-        2: 1116:            if (nbytes < 0) {
+    #####: 1116:            if (nbytes < 0) {
     #####: 1117:                perror("recvfrom (UDS_DGRAM)");
         -: 1118:            } else {
-        2: 1119:                buf[nbytes] = '\0';
-        2: 1120:                if (save_file_path) {
-        2: 1121:                    load_atoms_from_file(save_file_path, 0,0,0);
+    #####: 1119:                buf[nbytes] = '\0';
+    #####: 1120:                if (save_file_path) {
+    #####: 1121:                    load_atoms_from_file(save_file_path, 0,0,0);
         -: 1122:                }
         -: 1123:                char response[MAXBUF];
-        2: 1124:                parse_and_update_udp(buf, response, sizeof(response));
-        2: 1125:                if (save_file_path) {
-        2: 1126:                    save_atoms_to_file(save_file_path);
+    #####: 1124:                parse_and_update_udp(buf, response, sizeof(response));
+    #####: 1125:                if (save_file_path) {
+    #####: 1126:                    save_atoms_to_file(save_file_path);
         -: 1127:                }
-        2: 1128:                if (sendto(
+    #####: 1128:                if (sendto(
         -: 1129:                        uds_dgram_fd,
         -: 1130:                        response, strlen(response),
         -: 1131:                        0,
@@ -1140,7 +1140,7 @@
     #####: 1136:                    perror("sendto (UDS_DGRAM)");
         -: 1137:                }
         -: 1138:            }
-        2: 1139:            if (timeout_secs > 0) {
+    #####: 1139:            if (timeout_secs > 0) {
     #####: 1140:                alarm(timeout_secs);
     #####: 1141:                timed_out = 0;
         -: 1142:            }

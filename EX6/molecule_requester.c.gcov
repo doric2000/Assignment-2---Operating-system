@@ -1,7 +1,7 @@
         -:    0:Source:molecule_requester.c
         -:    0:Graph:molecule_requester.gcno
         -:    0:Data:molecule_requester.gcda
-        -:    0:Runs:11
+        -:    0:Runs:12
         -:    1:/*
         -:    2:** molecule_requester.c -- a client that sends DELIVER commands and prints server replies
         -:    3:**
@@ -42,16 +42,16 @@
     #####:   38:    return &(((struct sockaddr_in6*)sa)->sin6_addr);
         -:   39:}
         -:   40:
-       11:   41:int main(int argc, char *argv[]) {
-       11:   42:    char *hostname = NULL;
-       11:   43:    char *port_str = NULL;
-       11:   44:    char *uds_path  = NULL;    // new: "-f" specifies UDS datagram socket file
+       12:   41:int main(int argc, char *argv[]) {
+       12:   42:    char *hostname = NULL;
+       12:   43:    char *port_str = NULL;
+       12:   44:    char *uds_path  = NULL;    // new: "-f" specifies UDS datagram socket file
         -:   45:
         -:   46:    // 1) Parse command‐line arguments: either UDP or UDS_DGRAM
-       11:   47:    const char *short_opts = "h:p:f:";
+       12:   47:    const char *short_opts = "h:p:f:";
         -:   48:    int opt;
-       24:   49:    while ((opt = getopt(argc, argv, short_opts)) != -1) {
-       16:   50:        switch (opt) {
+       26:   49:    while ((opt = getopt(argc, argv, short_opts)) != -1) {
+       17:   50:        switch (opt) {
         5:   51:            case 'h':
         -:   52:                // e.g. "-h server.example.com"
         5:   53:                hostname = optarg;
@@ -60,10 +60,10 @@
         -:   56:                // e.g. "-p 5555"
         5:   57:                port_str = optarg;
         5:   58:                break;
-        3:   59:            case 'f':
+        4:   59:            case 'f':
         -:   60:                // e.g. "-f /tmp/molecule_dgram.sock"
-        3:   61:                uds_path = optarg;
-        3:   62:                break;
+        4:   61:                uds_path = optarg;
+        4:   62:                break;
         3:   63:            default:
         3:   64:                fprintf(stderr,
         -:   65:                    "Usage:\n"
@@ -75,10 +75,10 @@
         -:   71:    }
         -:   72:
         -:   73:    // 2) Decide which transport to use. Exactly one must be set.
-        8:   74:    int use_udp       = (hostname && port_str) ? 1 : 0;
-        8:   75:    int use_uds_dgram = (uds_path) ? 1 : 0;
+        9:   74:    int use_udp       = (hostname && port_str) ? 1 : 0;
+        9:   75:    int use_uds_dgram = (uds_path) ? 1 : 0;
         -:   76:
-        8:   77:    if ((use_udp + use_uds_dgram) != 1) {
+        9:   77:    if ((use_udp + use_uds_dgram) != 1) {
         5:   78:        fprintf(stderr,
         -:   79:            "ERROR: you must specify exactly one transport mode:\n"
         -:   80:            "  UDP:           -h <hostname> -p <port>\n"
@@ -87,11 +87,11 @@
         -:   83:    }
         -:   84:
         -:   85:    // 3) Create a socket, and if UDP, resolve the remote address now.
-        3:   86:    int sockfd = -1;
-        3:   87:    struct sockaddr *server_addr = NULL;
-        3:   88:    socklen_t server_addr_len = 0;
+        4:   86:    int sockfd = -1;
+        4:   87:    struct sockaddr *server_addr = NULL;
+        4:   88:    socklen_t server_addr_len = 0;
         -:   89:
-        3:   90:    if (use_udp) {
+        4:   90:    if (use_udp) {
         -:   91:        // ----- UDP Mode: use getaddrinfo() to find the server’s IP/port -----
         -:   92:        struct addrinfo hints, *servinfo, *p;
         2:   93:        memset(&hints, 0, sizeof(hints));
@@ -141,29 +141,29 @@
         -:  137:    }
         -:  138:    else {
         -:  139:        // ----- UDS_DGRAM Mode -----
-        1:  140:        sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
-        1:  141:        if (sockfd < 0) {
+        2:  140:        sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        2:  141:        if (sockfd < 0) {
     #####:  142:            perror("socket (UDS_DGRAM)");
     #####:  143:            exit(EXIT_FAILURE);
         -:  144:        }
         -:  145:
         -:  146:        // To receive the server’s reply, bind ourselves to a unique abstract address:
         -:  147:        struct sockaddr_un local_addr;
-        1:  148:        memset(&local_addr, 0, sizeof(local_addr));
-        1:  149:        local_addr.sun_family = AF_UNIX;
+        2:  148:        memset(&local_addr, 0, sizeof(local_addr));
+        2:  149:        local_addr.sun_family = AF_UNIX;
         -:  150:        // Place a leading '\0' so this is an abstract‐namespace socket:
-        1:  151:        local_addr.sun_path[0] = '\0';
+        2:  151:        local_addr.sun_path[0] = '\0';
         -:  152:        // Name it “mreq_<pid>” to avoid collisions:
-        1:  153:        snprintf(&local_addr.sun_path[1],
+        2:  153:        snprintf(&local_addr.sun_path[1],
         -:  154:                 sizeof(local_addr.sun_path) - 1,
         -:  155:                 "mreq_%d", getpid());
         -:  156:
         -:  157:        // Compute the length: offsetof(sun_path) + 1 + strlen("mreq_<pid>")
-        1:  158:        socklen_t local_len = offsetof(struct sockaddr_un, sun_path)
+        2:  158:        socklen_t local_len = offsetof(struct sockaddr_un, sun_path)
         -:  159:                              + 1
-        1:  160:                              + strlen(&local_addr.sun_path[1]);
+        2:  160:                              + strlen(&local_addr.sun_path[1]);
         -:  161:
-        1:  162:        if (bind(sockfd, (struct sockaddr*)&local_addr, local_len) < 0) {
+        2:  162:        if (bind(sockfd, (struct sockaddr*)&local_addr, local_len) < 0) {
     #####:  163:            perror("bind (UDS_DGRAM local)");
     #####:  164:            close(sockfd);
     #####:  165:            exit(EXIT_FAILURE);
@@ -171,33 +171,33 @@
         -:  167:
         -:  168:        // Prepare the server’s UDS address structure:
         -:  169:        struct sockaddr_un uds_addr;
-        1:  170:        memset(&uds_addr, 0, sizeof(uds_addr));
-        1:  171:        uds_addr.sun_family = AF_UNIX;
-        1:  172:        strncpy(uds_addr.sun_path, uds_path, sizeof(uds_addr.sun_path) - 1);
+        2:  170:        memset(&uds_addr, 0, sizeof(uds_addr));
+        2:  171:        uds_addr.sun_family = AF_UNIX;
+        2:  172:        strncpy(uds_addr.sun_path, uds_path, sizeof(uds_addr.sun_path) - 1);
         -:  173:
-        1:  174:        server_addr = (struct sockaddr*)&uds_addr;
-        1:  175:        server_addr_len = sizeof(uds_addr);
+        2:  174:        server_addr = (struct sockaddr*)&uds_addr;
+        2:  175:        server_addr_len = sizeof(uds_addr);
         -:  176:
-        1:  177:        printf("client: UDS_DGRAM ready to send to %s\n", uds_path);
+        2:  177:        printf("client: UDS_DGRAM ready to send to %s\n", uds_path);
         -:  178:    }
         -:  179:
         -:  180:    // 4) Print a brief help / available commands
-        3:  181:    printf("\nAvailable commands (each on its own line):\n");
-        3:  182:    printf("  DELIVER WATER <number>\n");
-        3:  183:    printf("  DELIVER CARBON DIOXIDE <number>\n");
-        3:  184:    printf("  DELIVER ALCOHOL <number>\n");
-        3:  185:    printf("  DELIVER GLUCOSE <number>\n");
-        3:  186:    printf("Type Ctrl+D or Ctrl+C to exit.\n\n");
+        4:  181:    printf("\nAvailable commands (each on its own line):\n");
+        4:  182:    printf("  DELIVER WATER <number>\n");
+        4:  183:    printf("  DELIVER CARBON DIOXIDE <number>\n");
+        4:  184:    printf("  DELIVER ALCOHOL <number>\n");
+        4:  185:    printf("  DELIVER GLUCOSE <number>\n");
+        4:  186:    printf("Type Ctrl+D or Ctrl+C to exit.\n\n");
         -:  187:
         -:  188:    // 5) Main loop: read a line, send it, receive & print the reply
         -:  189:    char line[MAXDATASIZE];
         -:  190:    char buffer[MAXDATASIZE];
         -:  191:
-        3:  192:    while (fgets(line, sizeof(line), stdin) != NULL) {
-    #####:  193:        size_t len = strlen(line);
-    #####:  194:        if (len == 0) continue;
+        5:  192:    while (fgets(line, sizeof(line), stdin) != NULL) {
+        1:  193:        size_t len = strlen(line);
+       1*:  194:        if (len == 0) continue;
         -:  195:
-    #####:  196:        if (use_udp) {
+        1:  196:        if (use_udp) {
         -:  197:            // ------ UDP send/receive ------
     #####:  198:            if (sendto(sockfd, line, len, 0, server_addr, server_addr_len) == -1) {
     #####:  199:                perror("sendto (UDP)");
@@ -221,33 +221,33 @@
         -:  217:        }
         -:  218:        else {
         -:  219:            // ------ UDS_DGRAM send/receive ------
-    #####:  220:            if (sendto(sockfd, line, len, 0, server_addr, server_addr_len) == -1) {
+        1:  220:            if (sendto(sockfd, line, len, 0, server_addr, server_addr_len) == -1) {
     #####:  221:                perror("sendto (UDS_DGRAM)");
     #####:  222:                break;
         -:  223:            }
         -:  224:            struct sockaddr_storage their_addr;
-    #####:  225:            socklen_t addr_len = sizeof(their_addr);
-    #####:  226:            ssize_t numbytes = recvfrom(
+        1:  225:            socklen_t addr_len = sizeof(their_addr);
+        1:  226:            ssize_t numbytes = recvfrom(
         -:  227:                sockfd,
         -:  228:                buffer, sizeof(buffer) - 1,
         -:  229:                0,
         -:  230:                (struct sockaddr*)&their_addr,
         -:  231:                &addr_len
         -:  232:            );
-    #####:  233:            if (numbytes < 0) {
+       1*:  233:            if (numbytes < 0) {
     #####:  234:                perror("recvfrom (UDS_DGRAM)");
     #####:  235:                continue;
         -:  236:            }
-    #####:  237:            buffer[numbytes] = '\0';
-    #####:  238:            printf("%s", buffer);
+        1:  237:            buffer[numbytes] = '\0';
+        1:  238:            printf("%s", buffer);
         -:  239:        }
         -:  240:    }
         -:  241:
         -:  242:    // 6) Clean up
-        3:  243:    close(sockfd);
-        3:  244:    if (use_udp) {
+        4:  243:    close(sockfd);
+        4:  244:    if (use_udp) {
         2:  245:        free(server_addr);
         -:  246:    }
-        3:  247:    printf("client: exiting\n");
-        3:  248:    return 0;
+        4:  247:    printf("client: exiting\n");
+        4:  248:    return 0;
         -:  249:}

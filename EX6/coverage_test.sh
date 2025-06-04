@@ -132,8 +132,6 @@ echo "========================================"
 echo "3a. atom_supplier_dbg branch coverage"
 echo "========================================"
 
-# First, simple “invalid‐option” tests:
-
 # (3a.1) No arguments → Usage error
 ./"$ATOM_BIN" < /dev/null || true
 
@@ -166,7 +164,6 @@ echo "========================================"
 ./"$ATOM_BIN" -f /tmp/nonexistent_stream.sock < /dev/null || true
 
 # Now exercise the “successful” TCP path (IPv4):
-# Launch dummy TCP server in background (listening IPv4):
 nc -l -p "$ATOM_TCP_ECHO_PORT" >/dev/null 2>&1 &
 TCP_ECHO_PID=$!
 sleep 0.1
@@ -176,22 +173,20 @@ timeout 1s ./"$ATOM_BIN" -h 127.0.0.1 -p "$ATOM_TCP_ECHO_PORT" < /dev/null || tr
 
 wait "$TCP_ECHO_PID" 2>/dev/null || true
 
-# Now cover the IPv6 path for getaddrinfo / connect:
-# Launch a dummy IPv6 server:
+# Cover the IPv6 path:
 nc -l -6 -p "$ATOM_TCP_ECHO_PORT" >/dev/null 2>&1 &
 TCP6_ECHO_PID=$!
 sleep 0.1
 
-# (3a.12) Valid IPv6 TCP → should hit AF_INET6 branch in getaddrinfo/get_in_addr
+# (3a.12) Valid IPv6 TCP → hits AF_INET6 branch
 timeout 1s ./"$ATOM_BIN" -h ::1 -p "$ATOM_TCP_ECHO_PORT" < /dev/null || true
 
 kill "$TCP6_ECHO_PID" 2>/dev/null || true
 
-# Next, exercise UDS_STREAM “success” path. We need a UDS‐STREAM listener:
+# Next, exercise UDS_STREAM “success” path:
 ATOM_UDS_PATH="/tmp/atom_stream.sock"
 [[ -e "$ATOM_UDS_PATH" ]] && rm -f "$ATOM_UDS_PATH"
 
-# Launch dummy UDS_STREAM server (nc -lU) in background:
 nc -lU "$ATOM_UDS_PATH" >/dev/null 2>&1 &
 UDSSTREAM_ECHO_PID=$!
 sleep 0.1
@@ -245,13 +240,11 @@ timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p 99999 < /dev/null || true
 ./"$MOL_BIN" -f /tmp/nonexistent_dgram.sock < /dev/null || true
 
 # Now exercise the “successful” UDP path (IPv4):
-# Launch a dummy UDP “echo” server using netcat in the background:
-#   It listens on port MOL_UDP_ECHO_PORT with IPv4, and echoes back.
 nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
 UDP_ECHO_PID=$!
 sleep 0.1
 
-# (3b.11) Valid UDP send/receive (just sends “DELIVER GLUCOSE 0” so client goes through send/recv path)
+# (3b.11) Valid UDP send/receive
 printf "DELIVER GLUCOSE 0\n" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
 
 kill "$UDP_ECHO_PID" 2>/dev/null || true
@@ -261,12 +254,12 @@ nc -u -l -6 -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
 UDP6_ECHO_PID=$!
 sleep 0.1
 
-# (3b.12) Valid IPv6 UDP send/receive → hits AF_INET6 branch
+# (3b.12) Valid IPv6 UDP send/receive
 printf "DELIVER WATER 0\n" | timeout 1s ./"$MOL_BIN" -h ::1 -p "$MOL_UDP_ECHO_PORT" || true
 
 kill "$UDP6_ECHO_PID" 2>/dev/null || true
 
-# Next: exercise UDS_DGRAM “success” path. We need a UDS‐DGRAM listener that echoes back.
+# Next: exercise UDS_DGRAM “success” path:
 MOL_UDS_DGRAM_PATH="/tmp/mol_dgram.sock"
 [[ -e "$MOL_UDS_DGRAM_PATH" ]] && rm -f "$MOL_UDS_DGRAM_PATH"
 
@@ -349,7 +342,7 @@ echo "========================================"
 echo "3e. drinks_bar_dbg – file load/save (-f)"
 echo "========================================"
 
-# 3e.1) Nonexistent file → server must create and write back “2 3 4”
+# (3e.1) Nonexistent file → server must create and write back “2 3 4”
 rm -f atoms_new.txt
 run_drinks "-c 2 -o 3 -h 4 -T 7000 -U 7001 -f atoms_new.txt"
 stop_drinks
@@ -357,28 +350,28 @@ echo "→ atoms_new.txt now contains:"
 cat atoms_new.txt || true
 echo
 
-# 3e.2) Empty file → treat as nonexistent → initialize to (7,8,9)
+# (3e.2) Empty file → treat as nonexistent → initialize to (7,8,9)
 run_drinks "-c 7 -o 8 -h 9 -T 7000 -U 7001 -f $ATOM_FILE_BAD1"
 stop_drinks
 echo "→ $ATOM_FILE_BAD1 now contains:"
 cat "$ATOM_FILE_BAD1" || true
 echo
 
-# 3e.3) Invalid text “hello world” → treat as nonexistent → initialize to (1,2,3)
+# (3e.3) Invalid text “hello world” → treat as nonexistent → initialize to (1,2,3)
 run_drinks "-c 1 -o 2 -h 3 -T 7000 -U 7001 -f $ATOM_FILE_BAD2"
 stop_drinks
 echo "→ $ATOM_FILE_BAD2 now contains:"
 cat "$ATOM_FILE_BAD2" || true
 echo
 
-# 3e.4) Valid file “5 5 5” → load that, then stop (no change if no ADD)
+# (3e.4) Valid file “5 5 5” → load that, then stop (no change if no ADD)
 run_drinks "-c 0 -o 0 -h 0 -T 7000 -U 7001 -f $ATOM_FILE_GOOD"
 stop_drinks
 echo "→ $ATOM_FILE_GOOD still contains:"
 cat "$ATOM_FILE_GOOD" || true
 echo
 
-# 3e.5) Negative‐numbers file “-1 -1 -1” → treated as too small → init (4,5,6)
+# (3e.5) Negative‐numbers file “-1 -1 -1” → treated as too small → init (4,5,6)
 run_drinks "-c 4 -o 5 -h 6 -T 7000 -U 7001 -f $ATOM_FILE_BAD3"
 stop_drinks
 echo "→ $ATOM_FILE_BAD3 now contains (initialized to 4 5 6):"
@@ -565,7 +558,6 @@ if command -v nc >/dev/null 2>&1; then
 
     # (3j.2) UDS_DGRAM: valid and invalid DELIVER → need a UDS_DGRAM server:
     [[ -e "$UDS_DGRAM" ]] && rm -f "$UDS_DGRAM"
-    # Small Python echo server for UDS_DGRAM:
     python3 - << 'EOF' &
 import socket, os
 pth = "$UDS_DGRAM"

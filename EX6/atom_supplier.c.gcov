@@ -1,0 +1,200 @@
+        -:    0:Source:atom_supplier.c
+        -:    0:Graph:atom_supplier.gcno
+        -:    0:Data:atom_supplier.gcda
+        -:    0:Runs:11
+        -:    1:/*
+        -:    2:** atom_supplier.c -- a TCP client that sends ADD commands and prints server replies
+        -:    3:**
+        -:    4:** Usage: ./atom_supplier -h <hostname> -p <port>
+        -:    5:** After connecting, you can enter commands of the form:
+        -:    6:**   ADD CARBON <number>
+        -:    7:**   ADD OXYGEN <number>
+        -:    8:**   ADD HYDROGEN <number>
+        -:    9:** Each command must be on its own line (ending with Enter). For example:
+        -:   10:**   ADD CARBON 100
+        -:   11:**   ADD OXYGEN 50
+        -:   12:**   ADD HYDROGEN 1000000000000000000
+        -:   13:** To exit, press Ctrl+D (EOF) or Ctrl+C.
+        -:   14:*/
+        -:   15:
+        -:   16:#include <stdio.h>          // for fgets, printf, fprintf
+        -:   17:#include <stdlib.h>         // for exit
+        -:   18:#include <string.h>         // for strlen, strcmp, memset
+        -:   19:#include <unistd.h>         // for close
+        -:   20:#include <errno.h>          // for errno
+        -:   21:#include <netdb.h>          // for getaddrinfo, freeaddrinfo, struct addrinfo
+        -:   22:#include <sys/types.h>      // for socklen_t
+        -:   23:#include <sys/socket.h>     // for socket, connect, send, recv
+        -:   24:#include <arpa/inet.h>      // for inet_ntop (print IP address)
+        -:   25:#include <getopt.h>          // getopt
+        -:   26:#include <sys/un.h>          // sockaddr_un
+        -:   27:
+        -:   28:#define MAXDATASIZE 1024    // maximum buffer size for receiving data
+        -:   29:
+        -:   30:// get_in_addr: return a pointer to the IPv4 or IPv6 address within sockaddr
+    #####:   31:void *get_in_addr(struct sockaddr *sa) {
+    #####:   32:    if (sa->sa_family == AF_INET) {
+        -:   33:        // IPv4 address
+    #####:   34:        return &(((struct sockaddr_in*)sa)->sin_addr);
+        -:   35:    }
+        -:   36:    // IPv6 address
+    #####:   37:    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+        -:   38:}
+        -:   39:
+       11:   40:int main(int argc, char *argv[]) {
+       11:   41:    char *hostname = NULL;
+       11:   42:    char *port_str = NULL;
+       11:   43:    char *uds_path  = NULL;    // new: "-f" specifies UDS datagram socket file
+        -:   44:
+        -:   45:    // 1) Parse command‐line arguments: either UDP or UDS_DGRAM
+       11:   46:    const char *short_opts = "h:p:f:";
+        -:   47:    int opt;
+       24:   48:    while ((opt = getopt(argc, argv, short_opts)) != -1) {
+       16:   49:        switch (opt) {
+        5:   50:            case 'h':
+        -:   51:                // e.g. "-h server.example.com"
+        5:   52:                hostname = optarg;
+        5:   53:                break;
+        5:   54:            case 'p':
+        -:   55:                // e.g. "-p 5555"
+        5:   56:                port_str = optarg;
+        5:   57:                break;
+        3:   58:            case 'f':
+        -:   59:                // e.g. "-f /tmp/molecule_dgram.sock"
+        3:   60:                uds_path = optarg;
+        3:   61:                break;
+        3:   62:            default:
+        3:   63:                fprintf(stderr,
+        -:   64:                    "Usage:\n"
+        -:   65:                    "  UDP mode:      %s -h <hostname> -p <port>\n"
+        -:   66:                    "  UDS_STREAM mode:%s -f <uds_socket_file_path>\n",
+        -:   67:                    argv[0], argv[0]);
+        3:   68:                exit(EXIT_FAILURE);
+        -:   69:        }
+        -:   70:    }
+        -:   71:
+        -:   72:    // 2) Decide which transport to use (exactly one)
+        8:   73:    int use_tcp        = (hostname && port_str) ? 1 : 0;
+        8:   74:    int use_uds_stream = (uds_path) ? 1 : 0;
+        8:   75:    if ((use_tcp + use_uds_stream) != 1) {
+        5:   76:        fprintf(stderr,
+        -:   77:            "ERROR: you must specify exactly one transport mode:\n"
+        -:   78:            "  TCP:         -h <hostname> -p <port>\n"
+        -:   79:            "  UDS_STREAM:  -f <uds_socket_file>\n");
+        5:   80:        exit(EXIT_FAILURE);
+        -:   81:    }
+        -:   82:
+        3:   83:    int sockfd = -1;    // this will hold our socket FD
+        -:   84:
+        3:   85:    if (use_tcp) {
+        -:   86:        //------------------------------------------------------------
+        -:   87:        // TCP mode: do a normal getaddrinfo() + socket() + connect()
+        -:   88:        //------------------------------------------------------------
+        -:   89:        struct addrinfo hints, *servinfo, *p;
+        2:   90:        memset(&hints, 0, sizeof hints);
+        2:   91:        hints.ai_family   = AF_UNSPEC;         // IPv4 or IPv6
+        2:   92:        hints.ai_socktype = SOCK_STREAM;       // TCP streams
+        -:   93:
+        -:   94:        int rv;
+        2:   95:        if ((rv = getaddrinfo(hostname, port_str, &hints, &servinfo)) != 0) {
+    #####:   96:            fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+       2*:   97:            return 1;
+        -:   98:        }
+        -:   99:
+        4:  100:        for (p = servinfo; p != NULL; p = p->ai_next) {
+        2:  101:            sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+       2*:  102:            if (sockfd < 0) {
+    #####:  103:                perror("client: socket");
+    #####:  104:                continue;
+        -:  105:            }
+        2:  106:            if (connect(sockfd, p->ai_addr, p->ai_addrlen) < 0) {
+        2:  107:                perror("client: connect");
+        2:  108:                close(sockfd);
+        2:  109:                continue;
+        -:  110:            }
+    #####:  111:            break;  // got connected successfully
+        -:  112:        }
+        -:  113:
+        2:  114:        if (p == NULL) {
+        2:  115:            fprintf(stderr, "client: failed to connect to %s:%s\n", hostname, port_str);
+        2:  116:            freeaddrinfo(servinfo);
+        2:  117:            return 2;
+        -:  118:        }
+        -:  119:
+        -:  120:        // print the server IP we connected to
+        -:  121:        char s[INET6_ADDRSTRLEN];
+    #####:  122:        inet_ntop(p->ai_family,
+    #####:  123:                  get_in_addr((struct sockaddr *)p->ai_addr),
+        -:  124:                  s, sizeof s);
+    #####:  125:        printf("client (TCP): connected to %s:%s\n", s, port_str);
+        -:  126:
+    #####:  127:        freeaddrinfo(servinfo);
+        -:  128:    }
+        -:  129:    else {
+        -:  130:        //------------------------------------------------------------
+        -:  131:        // UDS_STREAM mode: create AF_UNIX/SOCK_STREAM socket + connect()
+        -:  132:        //------------------------------------------------------------
+        1:  133:        sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+        1:  134:        if (sockfd < 0) {
+    #####:  135:            perror("socket (UDS_STREAM)");
+    #####:  136:            exit(EXIT_FAILURE);
+        -:  137:        }
+        -:  138:
+        -:  139:        struct sockaddr_un uds_addr;
+        1:  140:        memset(&uds_addr, 0, sizeof(uds_addr));
+        1:  141:        uds_addr.sun_family = AF_UNIX;
+        -:  142:        // copy the path into sun_path (null-terminated)
+        1:  143:        strncpy(uds_addr.sun_path, uds_path, sizeof(uds_addr.sun_path) - 1);
+        -:  144:
+        1:  145:        if (connect(sockfd, (struct sockaddr*)&uds_addr, sizeof(uds_addr)) < 0) {
+        1:  146:            perror("connect (UDS_STREAM)");
+        1:  147:            close(sockfd);
+        1:  148:            exit(EXIT_FAILURE);
+        -:  149:        }
+        -:  150:
+    #####:  151:        printf("client (UDS_STREAM): connected to %s\n", uds_path);
+        -:  152:    }
+        -:  153:
+        -:  154:    // 3) Print a brief help / available commands
+    #####:  155:    printf("\nAvailable commands (each on its own line):\n");
+    #####:  156:    printf("  ADD CARBON <number>\n");
+    #####:  157:    printf("  ADD OXYGEN <number>\n");
+    #####:  158:    printf("  ADD HYDROGEN <number>\n");
+    #####:  159:    printf("Type Ctrl+D or Ctrl+C to exit.\n\n");
+        -:  160:
+        -:  161:    // 4) Read lines from stdin and send them to the server
+        -:  162:    char line[MAXDATASIZE];
+        -:  163:    char buffer[MAXDATASIZE];
+    #####:  164:    while (fgets(line, sizeof(line), stdin) != NULL) {
+    #####:  165:        if (strcmp(line, "\n") == 0) {
+        -:  166:            // skip empty line
+    #####:  167:            continue;
+        -:  168:        }
+        -:  169:
+    #####:  170:        size_t len = strlen(line);
+    #####:  171:        if (send(sockfd, line, len, 0) == -1) {
+    #####:  172:            perror("send");
+    #####:  173:            break;
+        -:  174:        }
+        -:  175:
+        -:  176:        // 5) Receive the server's reply
+    #####:  177:        ssize_t numbytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+    #####:  178:        if (numbytes < 0) {
+    #####:  179:            perror("recv");
+    #####:  180:            break;
+        -:  181:        }
+    #####:  182:        else if (numbytes == 0) {
+        -:  183:            // server closed connection
+    #####:  184:            printf("Server closed connection\n");
+    #####:  185:            break;
+        -:  186:        }
+        -:  187:
+    #####:  188:        buffer[numbytes] = '\0';
+    #####:  189:        printf("%s", buffer);
+        -:  190:    }
+        -:  191:
+        -:  192:    // 6) Close socket
+    #####:  193:    close(sockfd);
+    #####:  194:    printf("client: connection closed\n");
+    #####:  195:    return 0;
+        -:  196:}

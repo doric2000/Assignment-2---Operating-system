@@ -642,3 +642,5 @@ echo
 kill 0 2>/dev/null || true
 rm -f "$FIFO_STDIN" "$UDS_STREAM" "$UDS_DGRAM" /tmp/mol_dgram.sock /tmp/atom_stream.sock
 echo "---- CLEANUP complete ----"
+
+

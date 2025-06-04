@@ -1,6 +1,6 @@
         -:    0:Source:atom_supplier.c
-        -:    0:Graph:atom_supplier.gcno
-        -:    0:Data:atom_supplier.gcda
+        -:    0:Graph:./atom_supplier.gcno
+        -:    0:Data:./atom_supplier.gcda
         -:    0:Runs:14
         -:    1:/*
         -:    2:** atom_supplier.c -- a TCP client that sends ADD commands and prints server replies

@@ -1,6 +1,6 @@
         -:    0:Source:drinks_bar.c
-        -:    0:Graph:drinks_bar.gcno
-        -:    0:Data:drinks_bar.gcda
+        -:    0:Graph:./drinks_bar.gcno
+        -:    0:Data:./drinks_bar.gcda
         -:    0:Runs:26
         -:    1:/*
         -:    2:** drinks_bar.c -- a combined TCP+UDP server for:

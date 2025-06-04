@@ -1,6 +1,6 @@
         -:    0:Source:molecule_requester.c
-        -:    0:Graph:molecule_requester.gcno
-        -:    0:Data:molecule_requester.gcda
+        -:    0:Graph:./molecule_requester.gcno
+        -:    0:Data:./molecule_requester.gcda
         -:    0:Runs:12
         -:    1:/*
         -:    2:** molecule_requester.c -- a client that sends DELIVER commands and prints server replies

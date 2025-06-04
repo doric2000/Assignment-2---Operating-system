@@ -2,7 +2,7 @@
 #
 # coverage_test.sh
 #
-# Goal: achieve near-100% gcov coverage on:
+# Goal: achieve ≥85% gcov coverage on:
 #   - drinks_bar.c
 #   - atom_supplier.c
 #   - molecule_requester.c
@@ -12,7 +12,7 @@
 #   1. Compile each .c with -fprofile-arcs -ftest-coverage
 #   2. Run all tests (during which each *_dbg program emits its own .gcda)
 #      → including “dummy” servers so clients actually connect/send as needed
-#   3. Rename all newly-created *.gcno and *.gcda from "<bin>-<source>.*" → "<source>.*"
+#   3. Rename any newly-​created *.gcno/*.gcda to match <source>.* (if needed)
 #   4. Run gcov → *.gcov
 #
 # Usage:
@@ -44,7 +44,7 @@ UDS_DGRAM="/tmp/test_dgram.sock"
 ATOM_FILE_GOOD="atoms_good.txt"
 ATOM_FILE_BAD1="atoms_bad1.txt"
 ATOM_FILE_BAD2="atoms_bad2.txt"
-ATOM_FILE_BAD3="atoms_bad3.txt"  # negative‐numbers case
+ATOM_FILE_BAD3="atoms_bad3.txt"  # negative-numbers case
 
 # Ports for dummy “echo” servers (for atom_supplier & molecule_requester)
 ATOM_TCP_ECHO_PORT=50010
@@ -52,6 +52,7 @@ MOL_UDP_ECHO_PORT=60010
 
 echo "---- Step 0: Removing any old *.gcno / *.gcda / *.gcov ----"
 rm -f ./*.gcno ./*.gcda ./*.gcov
+find . -type f \( -name "*.gcno" -o -name "*.gcda" -o -name "*.gcov" \) -delete
 echo "---- Old coverage data removed ----"
 echo
 
@@ -160,7 +161,7 @@ echo "========================================"
 ./"$ATOM_BIN" -h 127.0.0.1 -p 50000 -f somefile < /dev/null || true
 ./"$ATOM_BIN" -f somefile -h 127.0.0.1 -p 50000 < /dev/null || true
 
-# (3a.10) UDS_STREAM‐only invocation (invalid path) → connect fails
+# (3a.10) UDS_STREAM-only invocation (invalid path) → connect fails
 ./"$ATOM_BIN" -f /tmp/nonexistent_stream.sock < /dev/null || true
 
 # Now exercise the “successful” TCP path (IPv4):
@@ -236,7 +237,7 @@ timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p 99999 < /dev/null || true
 ./"$MOL_BIN" -h 127.0.0.1 -p 60000 -f somefile < /dev/null || true
 ./"$MOL_BIN" -f somefile -h 127.0.0.1 -p 60000 < /dev/null || true
 
-# (3b.10) UDS_DGRAM‐only invocation (invalid path) → bind/bind‐error
+# (3b.10) UDS_DGRAM-only invocation (invalid path) → bind/bind-error
 ./"$MOL_BIN" -f /tmp/nonexistent_dgram.sock < /dev/null || true
 
 # Now exercise the “successful” UDP path (IPv4):
@@ -371,7 +372,7 @@ echo "→ $ATOM_FILE_GOOD still contains:"
 cat "$ATOM_FILE_GOOD" || true
 echo
 
-# (3e.5) Negative‐numbers file “-1 -1 -1” → treated as too small → init (4,5,6)
+# (3e.5) Negative-numbers file “-1 -1 -1” → treated as too small → init (4,5,6)
 run_drinks "-c 4 -o 5 -h 6 -T 7000 -U 7001 -f $ATOM_FILE_BAD3"
 stop_drinks
 echo "→ $ATOM_FILE_BAD3 now contains (initialized to 4 5 6):"
@@ -521,7 +522,7 @@ PORT4_UDP=$((UDP_BASE+200))
 
 printf "0 0 0" > "$ATOM_FILE_GOOD"
 run_drinks "-c 0 -o 0 -h 0 -T $PORT4_TCP -U $PORT4_UDP -t 1 -f $ATOM_FILE_GOOD"
-sleep 2    # longer than 1‐second timeout
+sleep 2    # longer than 1-second timeout
 stop_drinks
 
 echo "---- Stage 4 (Timeout) complete ----"
@@ -560,7 +561,7 @@ if command -v nc >/dev/null 2>&1; then
     [[ -e "$UDS_DGRAM" ]] && rm -f "$UDS_DGRAM"
     python3 - << 'EOF' &
 import socket, os
-pth = "$UDS_DGRAM"
+pth = "/tmp/test_dgram.sock"
 if os.path.exists(pth): os.unlink(pth)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 s.bind(pth)
@@ -588,26 +589,26 @@ echo "---- Stage 5 (UDS) complete ----"
 echo
 
 ############################
-# 4. Rename all *.gcno and *.gcda
+# 4. Rename any *.gcno and *.gcda (if needed)
 ############################
 
-echo "---- Step 4: Renaming all newly-generated .gcno/.gcda files ----"
+echo "---- Step 4: Renaming any newly-generated .gcno/.gcda ----"
 
 for src in "$DRINKS_SRC" "$ATOM_SRC" "$MOL_SRC"; do
     base="${src%.c}"
 
-    # Rename any "<bin>-<base>.gcno" → "<base>.gcno"
-    for note in ./*-"$base".gcno; do
+    # Sometimes coverage tools name them "<base>.gcno" directly.
+    # If, however, they end up as e.g. "<something>-${base}.gcno", catch both:
+    for note in ./"${base}"*.gcno*; do
         [[ -f "$note" ]] || continue
-        mv -f "$note" "./$base.gcno"
-        echo "  → Renamed $(basename "$note") → $base.gcno"
+        mv -f "$note" "./${base}.gcno"
+        echo "  → Renamed $(basename "$note") → ${base}.gcno"
     done
 
-    # Rename any "<bin>-<base>.gcda" → "<base>.gcda"
-    for data in ./*-"$base".gcda; do
+    for data in ./"${base}"*.gcda*; do
         [[ -f "$data" ]] || continue
-        mv -f "$data" "./$base.gcda"
-        echo "  → Renamed $(basename "$data") → $base.gcda"
+        mv -f "$data" "./${base}.gcda"
+        echo "  → Renamed $(basename "$data") → ${base}.gcda"
     done
 done
 
@@ -622,16 +623,16 @@ echo "========================================"
 echo "5. Generating gcov reports"
 echo "========================================"
 
-gcov "$DRINKS_SRC"   || true
-gcov "$ATOM_SRC"     || true
-gcov "$MOL_SRC"      || true
+gcov -o . "$DRINKS_SRC"   || true
+gcov -o . "$ATOM_SRC"     || true
+gcov -o . "$MOL_SRC"      || true
 
 echo
 echo "---- Coverage summary (grep “Lines executed”) ----"
 grep "Lines executed" *.gcov || true
 
 echo
-echo "---- All done. Check the *.gcov files for ~100% coverage. ----"
+echo "---- All done. Check the *.gcov files for ≥85% coverage. ----"
 echo
 
 ############################
@@ -642,5 +643,3 @@ echo
 kill 0 2>/dev/null || true
 rm -f "$FIFO_STDIN" "$UDS_STREAM" "$UDS_DGRAM" /tmp/mol_dgram.sock /tmp/atom_stream.sock
 echo "---- CLEANUP complete ----"
-
-

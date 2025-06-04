@@ -12,7 +12,7 @@
 #   1. Compile each .c with -fprofile-arcs -ftest-coverage
 #   2. Run all tests (during which each *_dbg program emits its own .gcda)
 #      → including “dummy” servers so clients actually connect/send as needed
-#   3. Rename any newly-​created *.gcno/*.gcda to match <source>.* (if needed)
+#   3. Rename any newly-generated *.gcno/*.gcda to match <source>.* (if needed)
 #   4. Run gcov → *.gcov
 #
 # Usage:
@@ -96,7 +96,7 @@ run_drinks() {
 
 stop_drinks() {
     #
-    # Close FD 3 → server sees EOF on its stdin → it prints “Console closed …” and exits cleanly.
+    # Close FD 3 → server sees EOF on its stdin → it exits cleanly.
     # If it still lingers, send SIGTERM after a brief wait.
     #
     if [[ $SERVER_PID -ne 0 ]]; then
@@ -202,6 +202,38 @@ echo "---- atom_supplier_dbg run complete ----"
 echo
 
 ########################
+# 3a.x atom_supplier_dbg – real send+receive test
+########################
+
+echo "========================================"
+echo "3a.x atom_supplier_dbg – real send+receive test"
+echo "========================================"
+
+# Start a TCP echo server
+nc -l -p "$ATOM_TCP_ECHO_PORT" >/dev/null 2>&1 &
+TCP_ECHO_PID=$!
+sleep 0.1
+
+# Send an ADD command and receive echo
+printf "ADD CARBON 1\n" | timeout 1s ./"$ATOM_BIN" -h 127.0.0.1 -p "$ATOM_TCP_ECHO_PORT" || true
+kill "$TCP_ECHO_PID" 2>/dev/null || true
+
+# Start a UDS_STREAM echo server
+ATOM_UDS_PATH="/tmp/atom_stream.sock"
+[[ -e "$ATOM_UDS_PATH" ]] && rm -f "$ATOM_UDS_PATH"
+nc -lU "$ATOM_UDS_PATH" >/dev/null 2>&1 &
+UDSSTREAM_ECHO_PID=$!
+sleep 0.1
+
+# Send an ADD command via UDS_STREAM
+printf "ADD OXYGEN 2\n" | timeout 1s ./"$ATOM_BIN" -f "$ATOM_UDS_PATH" || true
+kill "$UDSSTREAM_ECHO_PID" 2>/dev/null || true
+rm -f "$ATOM_UDS_PATH"
+
+echo "---- atom_supplier_dbg send+recv complete ----"
+echo
+
+########################
 # 3b. molecule_requester_dbg branch coverage (incl. dummy UDP, IPv6 & UDS servers)
 ########################
 
@@ -287,6 +319,75 @@ echo "---- molecule_requester_dbg run complete ----"
 echo
 
 ########################
+# 3b.x molecule_requester_dbg – “immediate EOF” path for UDP
+########################
+
+echo "========================================"
+echo "3b.x molecule_requester_dbg – immediate EOF (UDP)"
+echo "========================================"
+
+# Start a UDP echo server so that "socket path" logic still runs
+nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
+UDP_ECHO_PID=$!
+sleep 0.1
+
+# Now run with no input: should connect then immediately exit
+printf "" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
+
+kill "$UDP_ECHO_PID" 2>/dev/null || true
+
+echo "---- molecule_requester_dbg immediate EOF (UDP) complete ----"
+echo
+
+########################
+# 3b.y molecule_requester_dbg – “immediate EOF” path for UDS_DGRAM
+########################
+
+echo "========================================"
+echo "3b.y molecule_requester_dbg – immediate EOF (UDS_DGRAM)"
+echo "========================================"
+
+# Create a valid UDS_DGRAM listener so that code reaches bind() path
+MOL_UDS_DGRAM_PATH="/tmp/mol_dgram.sock"
+[[ -e "$MOL_UDS_DGRAM_PATH" ]] && rm -f "$MOL_UDS_DGRAM_PATH"
+python3 - << 'EOF' &
+import socket, os
+path = "/tmp/mol_dgram.sock"
+if os.path.exists(path): os.unlink(path)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.bind(path)
+while True:
+    data, addr = s.recvfrom(1024)
+    s.sendto(data, addr)
+EOF
+UDS_DGRAM_ECHO_PID=$!
+sleep 0.2
+
+# Run with no input: should bind and then exit
+printf "" | timeout 1s ./"$MOL_BIN" -f "$MOL_UDS_DGRAM_PATH" || true
+
+kill "$UDS_DGRAM_ECHO_PID" 2>/dev/null || true
+rm -f "$MOL_UDS_DGRAM_PATH"
+
+echo "---- molecule_requester_dbg immediate EOF (UDS_DGRAM) complete ----"
+echo
+
+########################
+# 3b.z molecule_requester_dbg – force UDS_DGRAM sendto error
+########################
+
+echo "========================================"
+echo "3b.z molecule_requester_dbg – force UDS_DGRAM sendto error"
+echo "========================================"
+
+# Pass “/” as the UDS path – socket(AF_UNIX) succeeds, bind(local) succeeds,
+# but sendto(server_addr) fails because “/” is a directory, not a socket.
+printf "DELIVER WATER 1\n" | timeout 1s ./"$MOL_BIN" -f "/" || true
+
+echo "---- molecule_requester_dbg UDS_DGRAM sendto error complete ----"
+echo
+
+########################
 # 3c. drinks_bar_dbg – usage and invalid options
 ########################
 
@@ -320,6 +421,32 @@ echo "========================================"
 ./"$DRINKS_BIN" -c 1 -o 1 -h 1 -T 5000 -U 6000 -t < /dev/null || true
 
 echo "---- drinks_bar_dbg usage tests complete ----"
+echo
+
+########################
+# 3c.x drinks_bar_dbg – Stage 1: multiple ADD commands in one TCP connection
+########################
+
+echo "========================================"
+echo "3c.x drinks_bar_dbg – Stage 1: multiple ADD in one TCP connection"
+echo "========================================"
+
+# Ensure starting inventory is 0,0,0
+printf "0 0 0" > "$ATOM_FILE_GOOD"
+
+run_drinks "-c 0 -o 0 -h 0 -T $TCP_BASE -U $UDP_BASE -f $ATOM_FILE_GOOD"
+sleep 0.2
+
+# Send three ADD commands in one nc session
+(
+  printf "ADD CARBON 3\n"
+  printf "ADD OXYGEN 2\n"
+  printf "ADD HYDROGEN 5\n"
+) | timeout 1s nc -N 127.0.0.1 $TCP_BASE || true
+
+stop_drinks
+
+echo "---- Stage 1 multiple ADD complete ----"
 echo
 
 ########################
@@ -478,6 +605,31 @@ echo "---- Stage 2 (DELIVER via UDP) complete ----"
 echo
 
 ########################
+# 3g.x drinks_bar_dbg – Stage 2: DELIVER count=0 and excessive whitespace
+########################
+
+echo "========================================"
+echo "3g.x drinks_bar_dbg – Stage 2: DELIVER count=0 and whitespace"
+echo "========================================"
+
+run_drinks "-c 0 -o 0 -h 0 -T $TCP_BASE -U $UDP_BASE -f $ATOM_FILE_GOOD"
+sleep 0.2
+
+# Inventory 0 → DELIVER WATER 0 → OK
+printf "DELIVER WATER 0\n" | timeout 1s nc -u 127.0.0.1 $UDP_BASE || true
+
+# Command with excessive whitespace
+printf "DELIVER      CARBON      DIOXIDE      2\n" | timeout 1s nc -u 127.0.0.1 $UDP_BASE || true
+
+# DELIVER with too-large count
+printf "DELIVER WATER 10000000000000000000\n" | timeout 1s nc -u 127.0.0.1 $UDP_BASE || true
+
+stop_drinks
+
+echo "---- Stage 2 DELIVER count=0 and whitespace complete ----"
+echo
+
+########################
 # 3h. drinks_bar_dbg – Stage 3: “GEN …” console
 ########################
 
@@ -510,6 +662,23 @@ echo "---- Stage 3 (Console GEN) complete ----"
 echo
 
 ########################
+# 3h.x drinks_bar_dbg – Stage 3: GEN extra tokens & case sensitivity
+########################
+
+echo "========================================"
+echo "3h.x drinks_bar_dbg – Stage 3: GEN extra tokens & case sensitivity"
+echo "========================================"
+
+# GEN SOFT DRINK EXTRA
+timeout 1s ./"$DRINKS_BIN" -c 18 -o 18 -h 42 -T $PORT3_TCP -U $PORT3_UDP < <(printf "GEN SOFT DRINK EXTRA\n") || true
+
+# Lowercase “gen” (should be invalid)
+timeout 1s ./"$DRINKS_BIN" -c 18 -o 18 -h 42 -T $PORT3_TCP -U $PORT3_UDP < <(printf "gen soft drink\n") || true
+
+echo "---- Stage 3 GEN extra tokens & case check complete ----"
+echo
+
+########################
 # 3i. drinks_bar_dbg – Stage 4: Timeout (inactivity)
 ########################
 
@@ -526,6 +695,36 @@ sleep 2    # longer than 1-second timeout
 stop_drinks
 
 echo "---- Stage 4 (Timeout) complete ----"
+echo
+
+########################
+# 3i.x drinks_bar_dbg – Stage 4: Timeout reset after activity
+########################
+
+echo "========================================"
+echo "3i.x drinks_bar_dbg – Stage 4: Timeout reset after activity"
+echo "========================================"
+
+PORT4_TCP=$((TCP_BASE+200))
+PORT4_UDP=$((UDP_BASE+200))
+
+printf "0 0 0" > "$ATOM_FILE_GOOD"
+run_drinks "-c 0 -o 0 -h 0 -T $PORT4_TCP -U $PORT4_UDP -t 1 -f $ATOM_FILE_GOOD"
+sleep 0.5
+
+# Send ADD – timeout should reset
+printf "ADD CARBON 1\n" | timeout 1s nc -N 127.0.0.1 $PORT4_TCP || true
+kill -0 "$SERVER_PID" 2>/dev/null && echo "Server still alive after ADD" || echo "⚠️ Server exited prematurely"
+
+sleep 0.8
+kill -0 "$SERVER_PID" 2>/dev/null && echo "Server still alive before Timeout" || echo "⚠️ Server exited prematurely"
+
+sleep 2
+kill -0 "$SERVER_PID" 2>/dev/null && echo "⚠️ Server still alive after Timeout" || echo "Server exited after Timeout as expected"
+
+stop_drinks
+
+echo "---- Stage 4 Timeout reset complete ----"
 echo
 
 ########################
@@ -588,9 +787,39 @@ stop_drinks
 echo "---- Stage 5 (UDS) complete ----"
 echo
 
-############################
+########################
+# 3j.x drinks_bar_dbg – Stage 5: UDS_STREAM/UDS_DGRAM real test
+########################
+
+echo "========================================"
+echo "3j.x drinks_bar_dbg – Stage 5: UDS_STREAM/UDS_DGRAM real test"
+echo "========================================"
+
+PORT5_TCP=$((TCP_BASE+300))
+PORT5_UDP=$((UDP_BASE+300))
+
+# Start with hydrogen inventory of 10 (enough for DELIVER WATER=1)
+printf "0 0 10" > "$ATOM_FILE_GOOD"
+run_drinks "-c 0 -o 0 -h 0 -T $PORT5_TCP -U $PORT5_UDP -s $UDS_STREAM -d $UDS_DGRAM -f $ATOM_FILE_GOOD"
+sleep 0.2
+
+# (a) Send ADD via UDS_STREAM
+printf "ADD HYDROGEN 5\n" | timeout 1s nc -U "$UDS_STREAM" || true
+
+# (b) Send DELIVER WATER 2 via UDS_DGRAM → should succeed (H=10+5=15 → WATER×2 requires 2*2=4 H, leaving 11)
+printf "DELIVER WATER 2\n" | timeout 1s nc -u -U "$UDS_DGRAM" || true
+
+# (c) Send DELIVER INVALID 1 via UDS_DGRAM → “ERROR: invalid molecule type”
+printf "DELIVER INVALID 1\n" | timeout 1s nc -u -U "$UDS_DGRAM" || true
+
+stop_drinks
+
+echo "---- Stage 5 UDS real test complete ----"
+echo
+
+########################
 # 4. Rename any *.gcno and *.gcda (if needed)
-############################
+########################
 
 echo "---- Step 4: Renaming any newly-generated .gcno/.gcda ----"
 
@@ -615,9 +844,9 @@ done
 echo "---- Renaming of .gcno/.gcda complete ----"
 echo
 
-############################
+########################
 # 5. Generate gcov output
-############################
+########################
 
 echo "========================================"
 echo "5. Generating gcov reports"
@@ -635,9 +864,9 @@ echo
 echo "---- All done. Check the *.gcov files for ≥85% coverage. ----"
 echo
 
-############################
+########################
 # 6. Cleanup
-############################
+########################
 
 # Kill any leftover processes, remove FIFOs/UDS sockets
 kill 0 2>/dev/null || true

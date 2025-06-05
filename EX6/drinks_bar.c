@@ -120,17 +120,6 @@ static void load_atoms_from_file(const char *path, uint64_t init_c,uint64_t init
 //releases the lock and closes the files.
 static void save_atoms_to_file(const char *path);
 
-
-// ----------------------------------------------------------------------------
-// SIGCHLD handler: simply reap all children in a loop (non‐blocking).
-// ----------------------------------------------------------------------------
-void sigchld_handler(int sig) {
-    (void)sig;  // suppress unused‐parameter warning
-    int saved_errno = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0) { }
-    errno = saved_errno;
-}
-
 // ----------------------------------------------------------------------------
 // SIGALRM handler: marks that we timed out (no activity for <timeout> seconds).
 // We use write() (async‐signal safe) just to print a quick message.
@@ -140,16 +129,6 @@ void alarm_handler(int sig) {
     const char msg[] = ">>> Alarm handler invoked! Server shutting down due to inactivity.\n";
     write(STDOUT_FILENO, msg, sizeof(msg) - 1);
     timed_out = 1;
-}
-
-// ----------------------------------------------------------------------------
-// Return pointer to the IPv4 or IPv6 address inside a sockaddr.
-// ----------------------------------------------------------------------------
-void *get_in_addr(struct sockaddr *sa) {
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
 // ----------------------------------------------------------------------------
@@ -708,15 +687,6 @@ int main(int argc, char *argv[]) {
         }
         printf("server (TCP): listening on port %s...\n", tcp_port_str);
 
-        // Install SIGCHLD handler for TCP child reaping (if we ever fork)
-        struct sigaction sa_chld;
-        sa_chld.sa_handler = sigchld_handler;
-        sigemptyset(&sa_chld.sa_mask);
-        sa_chld.sa_flags = SA_RESTART;
-        if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
-            perror("sigaction(SIGCHLD)");
-            exit(EXIT_FAILURE);
-        }
     }
 
     // ----------------------------------------------------------------------------

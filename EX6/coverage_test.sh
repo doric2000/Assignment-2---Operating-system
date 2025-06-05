@@ -48,6 +48,7 @@ ATOM_FILE_BAD3="atoms_bad3.txt"  # negative-numbers case
 
 # Ports for dummy “echo” servers (for atom_supplier & molecule_requester)
 ATOM_TCP_ECHO_PORT=50010
+ATOM_TCP_INTERACTIVE_PORT=50011
 MOL_UDP_ECHO_PORT=60010
 
 echo "---- Step 0: Removing any old *.gcno / *.gcda / *.gcov ----"
@@ -234,6 +235,55 @@ echo "---- atom_supplier_dbg send+recv complete ----"
 echo
 
 ########################
+# 3a.y atom_supplier_dbg – interactive-loop coverage
+########################
+
+echo "========================================"
+echo "3a.y atom_supplier_dbg – interactive-loop coverage"
+echo "========================================"
+
+# 1) Launch a minimal Python TCP server that:
+#    • Listens on ATOM_TCP_INTERACTIVE_PORT
+#    • Accepts a single connection
+#    • Reads two messages: first a blank line, then "ADD CARBON 7\n"
+#    • Echoes back the second message, then closes the connection
+python3 << EOF &
+import socket
+
+HOST = '127.0.0.1'
+PORT = $ATOM_TCP_INTERACTIVE_PORT
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind((HOST, PORT))
+srv.listen(1)
+
+conn, addr = srv.accept()
+# Read the first message (blank line)
+_ = conn.recv(1024)
+# Read the second message ("ADD CARBON 7\n")
+data = conn.recv(1024)
+# Echo back the second message
+if data:
+    conn.sendall(data)
+# Close the connection to cause recv() == 0 in atom_supplier_dbg
+conn.close()
+srv.close()
+EOF
+PY_SERVER_PID=$!
+sleep 0.2
+
+# 2) Now run atom_supplier_dbg, feeding it:
+#    • A blank line ("\n") to trigger the continue; branch
+#    • "ADD CARBON 7\n" so that send()/recv() are exercised
+printf "\nADD CARBON 7\n" | timeout 1s ./"$ATOM_BIN" -h 127.0.0.1 -p "$ATOM_TCP_INTERACTIVE_PORT" || true
+
+kill "$PY_SERVER_PID" 2>/dev/null || true
+
+echo "---- atom_supplier_dbg interactive-loop complete ----"
+echo
+
+########################
 # 3b. molecule_requester_dbg branch coverage (incl. dummy UDP, IPv6 & UDS servers)
 ########################
 
@@ -272,13 +322,22 @@ timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p 99999 < /dev/null || true
 # (3b.10) UDS_DGRAM-only invocation (invalid path) → bind/bind-error
 ./"$MOL_BIN" -f /tmp/nonexistent_dgram.sock < /dev/null || true
 
-# Now exercise the “successful” UDP path (IPv4):
+#
+# ** NEW BLOCK TO FORCE THE UDP sendto+recvfrom PATH **
+#
+
+# Launch a temporary UDP “echo” server on MOL_UDP_ECHO_PORT,
+# which simply echoes back any packet it receives.
 nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
 UDP_ECHO_PID=$!
 sleep 0.1
 
-# (3b.11) Valid UDP send/receive
-printf "DELIVER GLUCOSE 0\n" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
+# (3b.11) Valid UDP send/receive (IPv4)
+# → This forces:
+#    - sendto(...) to succeed,
+#    - recvfrom(...) to get “DELIVER WATER 0\n” back,
+#    - then fgets() sees EOF and exits.
+printf "DELIVER WATER 0\n" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
 
 kill "$UDP_ECHO_PID" 2>/dev/null || true
 
@@ -287,7 +346,7 @@ nc -u -l -6 -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
 UDP6_ECHO_PID=$!
 sleep 0.1
 
-# (3b.12) Valid IPv6 UDP send/receive
+# (3b.12) Valid UDP send/receive (IPv6)
 printf "DELIVER WATER 0\n" | timeout 1s ./"$MOL_BIN" -h ::1 -p "$MOL_UDP_ECHO_PORT" || true
 
 kill "$UDP6_ECHO_PID" 2>/dev/null || true
@@ -296,7 +355,7 @@ kill "$UDP6_ECHO_PID" 2>/dev/null || true
 MOL_UDS_DGRAM_PATH="/tmp/mol_dgram.sock"
 [[ -e "$MOL_UDS_DGRAM_PATH" ]] && rm -f "$MOL_UDS_DGRAM_PATH"
 
-python3 - << 'EOF' &
+python3 << EOF &
 import socket, os
 path = "/tmp/mol_dgram.sock"
 if os.path.exists(path): os.unlink(path)
@@ -318,29 +377,40 @@ rm -f "$MOL_UDS_DGRAM_PATH"
 echo "---- molecule_requester_dbg run complete ----"
 echo
 
-########################
-# 3b.x molecule_requester_dbg – “immediate EOF” path for UDP
-########################
+# ────────────────────────────────────────────────────────────────
+# 3b.x+1. molecule_requester_dbg – force actual UDP send/receive
+# ────────────────────────────────────────────────────────────────
 
 echo "========================================"
-echo "3b.x molecule_requester_dbg – immediate EOF (UDP)"
+echo "3b.x+1. molecule_requester_dbg – actual UDP send/receive"
 echo "========================================"
 
-# Start a UDP echo server so that "socket path" logic still runs
+# (a) Start a simple UDP echo server on $MOL_UDP_ECHO_PORT
+#     '-u' → UDP mode, '-l' → listen, '-p' → port, '-k' → stay open after each packet
 nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
 UDP_ECHO_PID=$!
 sleep 0.1
 
-# Now run with no input: should connect then immediately exit
-printf "" | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
+# (b) Send one valid DELIVER command via molecule_requester_dbg → should hit sendto() + recvfrom()
+printf "DELIVER WATER 1\n" \
+  | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" \
+  || true
 
-kill "$UDP_ECHO_PID" 2>/dev/null || true
+# (c) Optionally, send a malformed command to force perror("sendto (UDP)") branch:
+#     We give an invalid port (e.g., 0) so sendto() fails immediately.
+printf "DELIVER WATER 1\n" \
+  | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p 0 \
+  || true
 
-echo "---- molecule_requester_dbg immediate EOF (UDP) complete ----"
+# (d) Clean up the UDP echo server
+kill "$UDP_ECHO_PID" >/dev/null 2>&1 || true
+
+echo "---- molecule_requester_dbg actual UDP send/receive tests complete ----"
 echo
 
+
 ########################
-# 3b.y molecule_requester_dbg – “immediate EOF” path for UDS_DGRAM
+# 3b.y molecule_requester_dbg – immediate EOF (UDS_DGRAM)
 ########################
 
 echo "========================================"
@@ -350,7 +420,7 @@ echo "========================================"
 # Create a valid UDS_DGRAM listener so that code reaches bind() path
 MOL_UDS_DGRAM_PATH="/tmp/mol_dgram.sock"
 [[ -e "$MOL_UDS_DGRAM_PATH" ]] && rm -f "$MOL_UDS_DGRAM_PATH"
-python3 - << 'EOF' &
+python3 << EOF &
 import socket, os
 path = "/tmp/mol_dgram.sock"
 if os.path.exists(path): os.unlink(path)
@@ -363,7 +433,7 @@ EOF
 UDS_DGRAM_ECHO_PID=$!
 sleep 0.2
 
-# Run with no input: should bind and then exit
+# Run with no input: should bind and then exit (fgets sees EOF)
 printf "" | timeout 1s ./"$MOL_BIN" -f "$MOL_UDS_DGRAM_PATH" || true
 
 kill "$UDS_DGRAM_ECHO_PID" 2>/dev/null || true
@@ -386,6 +456,67 @@ printf "DELIVER WATER 1\n" | timeout 1s ./"$MOL_BIN" -f "/" || true
 
 echo "---- molecule_requester_dbg UDS_DGRAM sendto error complete ----"
 echo
+
+########################
+# 3b.x molecule_requester_dbg – real UDP send/receive
+########################
+
+echo "========================================"
+echo "3b.x molecule_requester_dbg – real UDP send/receive"
+echo "========================================"
+
+# Start a UDP echo server on MOL_UDP_ECHO_PORT
+nc -u -l -p "$MOL_UDP_ECHO_PORT" -k >/dev/null 2>&1 &
+UDP_ECHO_PID=$!
+sleep 0.1  # give nc a moment to bind
+
+# Feed several DELIVER commands into molecule_requester in UDP mode;
+# each line will be read by fgets() and trigger sendto(), recvfrom(), printf().
+printf "DELIVER WATER 2\n\
+DELIVER CARBON DIOXIDE 1\n\
+DELIVER ALCOHOL 1\n\
+DELIVER GLUCOSE 1\n" \
+  | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" || true
+
+# Tear down the UDP echo server
+kill "$UDP_ECHO_PID" 2>/dev/null || true
+
+echo "---- molecule_requester_dbg real UDP send/receive complete ----"
+echo
+
+# ───────────────────────────────────────────────────────────────
+# 3b.x. molecule_requester_dbg – force a real UDP echo → cover sendto+recvfrom
+# ───────────────────────────────────────────────────────────────
+
+echo "========================================"
+echo "3b.x. molecule_requester_dbg – real UDP echo test"
+echo "========================================"
+
+# Launch a simple Python‐based UDP echo server on $MOL_UDP_ECHO_PORT:
+python3 - << 'EOF' &
+import socket
+# bind to all interfaces on MOL_UDP_ECHO_PORT
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("0.0.0.0", $MOL_UDP_ECHO_PORT))
+while True:
+    data, addr = s.recvfrom(4096)
+    s.sendto(data, addr)
+EOF
+UDP_ECHO_PID=$!
+sleep 0.2
+
+# Now run molecule_requester_dbg in UDP mode; it will send and then receive the same bytes back.
+# This forces sendto() to return >=0 and recvfrom() to return >=0 (covering lines 198–217).
+printf "DELIVER WATER 1\n" \
+  | timeout 1s ./"$MOL_BIN" -h 127.0.0.1 -p "$MOL_UDP_ECHO_PORT" \
+  || true
+
+# Tear down the echo server
+kill "$UDP_ECHO_PID" 2>/dev/null || true
+echo "---- molecule_requester_dbg real UDP echo test complete ----"
+echo
+
+
 
 ########################
 # 3c. drinks_bar_dbg – usage and invalid options
@@ -629,6 +760,110 @@ stop_drinks
 echo "---- Stage 2 DELIVER count=0 and whitespace complete ----"
 echo
 
+# ────────────────────────────────────────────────────────────────
+# 3g.x. drinks_bar_dbg – Stage 2: exercise the UDP “DELIVER …” branches
+# ────────────────────────────────────────────────────────────────
+
+echo "========================================"
+echo "3g.x. drinks_bar_dbg – real UDP-DELIVER branch coverage"
+echo "========================================"
+
+# 1) Start drinks_bar_dbg with inventory=0,0,0
+#    (-f ensures file persistence, so that each DELIVER sees up-to-date stock)
+printf "0 0 0" > "$ATOM_FILE_GOOD"
+run_drinks "-c 0 -o 0 -h 0 -T $TCP_BASE -U $UDP_BASE -f $ATOM_FILE_GOOD"
+sleep 0.2
+
+# (a) “DELIVER” alone → missing arguments
+printf "DELIVER\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (b) “FOO BAR 1” → invalid command
+printf "FOO BAR 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (c) “DELIVER HELIUM 1” → invalid molecule
+printf "DELIVER HELIUM 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (d) “DELIVER WATER” → missing number
+printf "DELIVER WATER\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (e) “DELIVER WATER 1 EXTRA” → too many arguments
+printf "DELIVER WATER 1 EXTRA\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (f) “DELIVER WATER xyz” → invalid number
+printf "DELIVER WATER xyz\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (g) “DELIVER WATER 10000000000000000000” → number too large
+printf "DELIVER WATER 10000000000000000000\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (h) “DELIVER WATER 1” → not enough atoms (inventory still 0,0,0)
+printf "DELIVER WATER 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (i) Now add some inventory via TCP so subsequent DELIVER can succeed:
+printf "ADD OXYGEN 5\nADD HYDROGEN 5\n" \
+  | timeout 1s nc -N 127.0.0.1 $TCP_BASE \
+  || true
+
+# (j) “DELIVER WATER 0” → count = 0 branch (should return OK with no atom subtraction)
+printf "DELIVER WATER 0\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (k) “DELIVER      CARBON      DIOXIDE      2” → excessive whitespace is accepted
+#     (inventory of carbon is still 0, so “not enough carbon” branch)
+printf "DELIVER      CARBON      DIOXIDE      2\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (l) Add enough carbon & oxygen via TCP, then succeed
+printf "ADD CARBON 3\nADD OXYGEN 3\n" \
+  | timeout 1s nc -N 127.0.0.1 $TCP_BASE \
+  || true
+
+printf "DELIVER CARBON DIOXIDE 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (m) “DELIVER GLUCOSE 1” → not enough atoms (hydrogen still 5 from earlier)
+printf "DELIVER GLUCOSE 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (n) Top up hydrogen via TCP and succeed delivering GLUCOSE
+printf "ADD HYDROGEN 7\nADD OXYGEN 3\nADD CARBON 5\n" \
+  | timeout 1s nc -N 127.0.0.1 $TCP_BASE \
+  || true
+
+printf "DELIVER GLUCOSE 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# (o) “DELIVER ALCOHOL 1” → should succeed if enough atoms remain
+printf "DELIVER ALCOHOL 1\n" \
+  | timeout 1s nc -u -w1 127.0.0.1 $UDP_BASE \
+  || true
+
+# Clean up
+stop_drinks
+
+echo "---- Stage 2 UDP-DELIVER branch coverage complete ----"
+echo
+
 ########################
 # 3h. drinks_bar_dbg – Stage 3: “GEN …” console
 ########################
@@ -758,7 +993,7 @@ if command -v nc >/dev/null 2>&1; then
 
     # (3j.2) UDS_DGRAM: valid and invalid DELIVER → need a UDS_DGRAM server:
     [[ -e "$UDS_DGRAM" ]] && rm -f "$UDS_DGRAM"
-    python3 - << 'EOF' &
+    python3 << EOF &
 import socket, os
 pth = "/tmp/test_dgram.sock"
 if os.path.exists(pth): os.unlink(pth)
@@ -857,7 +1092,7 @@ gcov -o . "$ATOM_SRC"     || true
 gcov -o . "$MOL_SRC"      || true
 
 echo
-echo "---- Coverage summary (grep “Lines executed”) ----"
+echo "---- Coverage summary (grep \"Lines executed\") ----"
 grep "Lines executed" *.gcov || true
 
 echo

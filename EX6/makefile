@@ -1,35 +1,22 @@
-# Makefile for Stage 6 with GCOV support
+CXX = gcc
+CXXFLAGS = -Wall -g
+# for gcov() only
+GCOV_FLAGS = -fprofile-arcs -ftest-coverage
 
-# Compiler and flags
-CC       = gcc
-CFLAGS   = -g -O0 -fprofile-arcs -ftest-coverage -Wall -Wextra
-LDFLAGS  =
+all: atom_supplier.out drinks_bar.out molecule_requester.out
 
-# Executable names
-DRINKS_BAR       = drinks_bar
-ATOM_SUPPLIER    = atom_supplier
-MOLECULE_REQUEST = molecule_requester
+drinks_bar.out: drinks_bar.o
+	$(CXX) $(CXXFLAGS) $(GCOV_FLAGS) $^ -o $@
 
-# Default target: build all executables
-all: $(DRINKS_BAR) $(ATOM_SUPPLIER) $(MOLECULE_REQUEST)
+atom_supplier.out: atom_supplier.o
+	$(CXX) $(CXXFLAGS) $(GCOV_FLAGS) $^ -o $@
 
-# -----------------------------------------------------------------------------
-# 1) Build drinks_bar (Stage 6 server)
-# -----------------------------------------------------------------------------
-$(DRINKS_BAR): drinks_bar.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+molecule_requester.out: molecule_requester.o
+	$(CXX) $(CXXFLAGS) $(GCOV_FLAGS) $^ -o $@
 
-# -----------------------------------------------------------------------------
-# 2) Build atom_supplier (TCP client)
-# -----------------------------------------------------------------------------
-$(ATOM_SUPPLIER): atom_supplier.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
-
-# -----------------------------------------------------------------------------
-# 3) Build molecule_requester (UDP/UDS client)
-# -----------------------------------------------------------------------------
-$(MOLECULE_REQUEST): molecule_requester.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+# Convert all source files to object files
+%.o: %.c
+	$(CXX) $(CXXFLAGS) $(GCOV_FLAGS) -c $< -o $@
 
 # -----------------------------------------------------------------------------
 # 4) Run gcov to generate coverage reports for all .c files
@@ -49,7 +36,6 @@ gcov:
 # 5) Clean: remove executables, object files, and coverage artifacts (.gcda, .gcno, .gcov)
 # -----------------------------------------------------------------------------
 clean:
-	rm -f $(DRINKS_BAR) $(ATOM_SUPPLIER) $(MOLECULE_REQUEST)
-	rm -f *.gcda *.gcno *.gcov
+	rm -f *.o *.gcda *.gcno *.gcov
 
 .PHONY: all gcov clean

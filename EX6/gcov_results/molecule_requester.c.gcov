@@ -194,14 +194,14 @@
         -:  190:    char buffer[MAXDATASIZE];
         -:  191:
         8:  192:    while (fgets(line, sizeof(line), stdin) != NULL) {
-        2:  193:        size_t len = strlen(line);
-       2*:  194:        if (len == 0) continue;
+        3:  193:        size_t len = strlen(line);
+       3*:  194:        if (len == 0) continue;
         -:  195:
-        2:  196:        if (use_udp) {
+        3:  196:        if (use_udp) {
         -:  197:            // ------ UDP send/receive ------
-    #####:  198:            if (sendto(sockfd, line, len, 0, server_addr, server_addr_len) == -1) {
-    #####:  199:                perror("sendto (UDP)");
-    #####:  200:                break;
+        1:  198:            if (sendto(sockfd, line, len, 0, server_addr, server_addr_len) == -1) {
+        1:  199:                perror("sendto (UDP)");
+        1:  200:                break;
         -:  201:            }
         -:  202:            struct sockaddr_storage their_addr;
     #####:  203:            socklen_t addr_len = sizeof(their_addr);

@@ -421,8 +421,7 @@ int main(int argc, char *argv[]) {
     int udp_port           = -1;
     char *uds_stream_path  = NULL;
     char *uds_dgram_path   = NULL;
-    char *load_atoms_path = NULL;
-
+    
     struct option long_opts[] = {
         {"carbon",       required_argument, 0, 'c'},
         {"oxygen",       required_argument, 0, 'o'},
